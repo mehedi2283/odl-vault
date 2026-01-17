@@ -12,8 +12,8 @@ import {
   Loader2,
   FileText
 } from 'lucide-react';
-import Button from '../components/Button';
-import Toast from '../components/Toast';
+import Button from '../src/components/Button';
+import Toast from '../src/components/Toast';
 import { supabase } from '../services/supabase';
 import { generateKey, exportKey, importKey, encryptData, decryptData } from '../services/crypto';
 import { RoutePath } from '../types';

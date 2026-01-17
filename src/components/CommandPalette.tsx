@@ -14,7 +14,7 @@ import {
   Shield,
   EyeOff
 } from 'lucide-react';
-import { RoutePath } from '../types';
+import { RoutePath } from '../../types';
 
 interface CommandPaletteProps {
   onLogout: () => void;

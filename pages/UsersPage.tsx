@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserPlus, AlertCircle, Shield, Users, Loader2, Mail, Calendar, UserCheck, Lock, Crown, Search, X, Pencil, Key, Trash2 } from 'lucide-react';
-import Button from '../components/Button';
-import Input from '../components/Input';
-import Modal from '../components/Modal';
-import Toast from '../components/Toast';
+import Button from '../src/components/Button';
+import Input from '../src/components/Input';
+import Modal from '../src/components/Modal';
+import Toast from '../src/components/Toast';
 import { supabase } from '../services/supabase';
 import { RoutePath, User } from '../types';
 

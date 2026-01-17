@@ -37,11 +37,11 @@ import {
   Sparkles,
   RefreshCcw
 } from 'lucide-react';
-import Button from '../components/Button';
-import Input from '../components/Input';
-import Modal from '../components/Modal';
-import Toast from '../components/Toast';
-import CipherText from '../components/CipherText';
+import Button from '../src/components/Button';
+import Input from '../src/components/Input';
+import Modal from '../src/components/Modal';
+import Toast from '../src/components/Toast';
+import CipherText from '../src/components/CipherText';
 import { StoredCredential, FormSubmission, RoutePath, User, Folder as FolderType } from '../types';
 import { supabase } from '../services/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';

@@ -14,8 +14,8 @@ import Input from '../components/Input';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import CipherText from '../components/CipherText';
-import { StoredCredential, FormSubmission, User, Folder as FolderType } from '../types';
-import { supabase } from '../services/supabase';
+import { StoredCredential, FormSubmission, User, Folder as FolderType } from '../../types';
+import { supabase } from '../../services/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 const FORM_TYPES = [

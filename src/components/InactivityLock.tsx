@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase } from '../../services/supabase';
 import { Lock, AlertCircle, ArrowRight, LogOut, Fingerprint } from 'lucide-react';
 
 interface InactivityLockProps {

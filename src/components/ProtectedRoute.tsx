@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { RoutePath } from '../types';
+import { RoutePath } from '../../types';
 
 interface ProtectedRouteProps {
   isAuthenticated: boolean;

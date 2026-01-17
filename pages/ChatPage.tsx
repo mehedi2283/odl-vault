@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Lock, Shield, User as UserIcon, RefreshCcw, MoreVertical, Crown, UserCheck, AlertTriangle } from 'lucide-react';
-import Button from '../components/Button';
+import Button from '../src/components/Button';
 import { supabase } from '../services/supabase';
 import { ChatMessage, User } from '../types';
 

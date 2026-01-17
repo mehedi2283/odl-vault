@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import Layout from './components/Layout';
+import Layout from './src/components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import UsersPage from './pages/UsersPage';
 import ChatPage from './pages/ChatPage';
 import DeadDropPage from './pages/DeadDropPage';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute from './src/components/ProtectedRoute';
 import { RoutePath, User } from './types';
 import { supabase } from './services/supabase';
 
