@@ -1,0 +1,5 @@
+{
+  "name": "ODL Vault",
+  "description": "Secured Operation Data Layer Vault for authorized personnel.",
+  "requestFramePermissions": []
+}
