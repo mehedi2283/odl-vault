@@ -5,7 +5,7 @@ import {
   Lock, ArrowRight, ScanLine, AlertCircle, Loader2, Fingerprint, 
   Eye, EyeOff, UserPlus, Shield, X, Unlock, ChevronRight 
 } from 'lucide-react';
-import { supabase } from '../services/supabase';
+import { supabase } from '../../services/supabase';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
