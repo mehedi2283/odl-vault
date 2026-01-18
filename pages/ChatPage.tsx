@@ -19,6 +19,18 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  
+  // Refs for tracking state inside callbacks without triggering re-subscriptions
+  const notificationsEnabledRef = useRef(notificationsEnabled);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    notificationsEnabledRef.current = notificationsEnabled;
+  }, [notificationsEnabled]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,9 +44,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   useEffect(() => {
     const syncNotificationState = () => {
         if ('Notification' in window) {
-            // If strictly granted, we assume enabled. If the user manually muted, 
-            // the toggle handler below handles the 'false' state, 
-            // but here we ensure that if permission is lost, we reflect it.
             if (Notification.permission !== 'granted') {
                 setNotificationsEnabled(false);
             }
@@ -43,7 +52,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
 
     syncNotificationState();
 
-    // Listen for browser-level permission changes (e.g. user changes settings tab)
     if ('permissions' in navigator) {
         navigator.permissions.query({ name: 'notifications' as PermissionName })
             .then((permissionStatus) => {
@@ -62,7 +70,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     }
   }, []);
 
-  // Initialize Audio Context on first interaction to bypass autoplay policy
+  // Initialize Audio Context
   useEffect(() => {
     const initAudio = () => {
         if (!audioContextRef.current) {
@@ -74,7 +82,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         if (audioContextRef.current?.state === 'suspended') {
             audioContextRef.current.resume();
         }
-        // Remove listeners once initialized
         window.removeEventListener('click', initAudio);
         window.removeEventListener('keydown', initAudio);
     };
@@ -94,15 +101,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           if (AudioContext) audioContextRef.current = new AudioContext();
       }
 
-      // Resume if suspended (vital for Chrome autoplay policy)
       if (audioContextRef.current?.state === 'suspended') {
-          await audioContextRef.current.resume();
+          await audioContextRef.current.resume().catch(() => {});
       }
 
       const ctx = audioContextRef.current;
       if (!ctx) return;
 
-      // Create a pleasant "pop" sound
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       
@@ -110,7 +115,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       gain.connect(ctx.destination);
       
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(130.81, ctx.currentTime + 0.3);
       
       gain.gain.setValueAtTime(0.1, ctx.currentTime);
@@ -119,7 +124,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       osc.start();
       osc.stop(ctx.currentTime + 0.3);
     } catch (e) {
-      console.error("Audio play failed", e);
+      // Audio play failure should not stop app execution
     }
   };
 
@@ -129,17 +134,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         return;
     }
 
-    // 1. If currently enabled, mute them.
     if (notificationsEnabled) {
         setNotificationsEnabled(false);
         setToast({ message: "Notifications muted", type: 'success' });
         return;
     }
 
-    // 2. If disabled, try to enable.
     const currentPermission = Notification.permission;
 
-    // Case A: Already granted in browser. User just wants to unmute in app.
     if (currentPermission === 'granted') {
         setNotificationsEnabled(true);
         setToast({ message: "Notifications active", type: 'success' });
@@ -147,13 +149,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         return;
     }
 
-    // Case B: Denied in browser - must instruct user
     if (currentPermission === 'denied') {
         setToast({ message: "Notifications blocked. Please enable in browser settings.", type: 'error' });
         return;
     }
 
-    // Case C: Default - Request permission
     try {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
@@ -174,16 +174,17 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     document.title = `(1) New Message - ${originalTitle}`;
     setTimeout(() => document.title = originalTitle, 5000);
 
-    // 2. In-App Toast (Always show for feedback)
+    // 2. In-App Toast
     setToast({ message: `New message from ${sender}`, type: 'success' });
 
     // 3. Native Notification
-    if (notificationsEnabled && Notification.permission === 'granted') {
+    // Use Ref here to get the latest state even inside the closure
+    if (notificationsEnabledRef.current && Notification.permission === 'granted') {
        try {
            new Notification(`New Message from ${sender}`, {
                body: text,
                tag: 'odl-chat',
-               silent: true // We play our own sound
+               silent: true
            });
        } catch (e) {
            console.error("Notification trigger failed", e);
@@ -191,7 +192,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     }
   };
 
-  // Standard User color is explicitly gray
   const getUserColor = (userId: string) => {
       return 'bg-gray-100 border-gray-200 text-gray-800';
   };
@@ -213,7 +213,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           return 'bg-violet-50 border-violet-200 text-violet-900 rounded-2xl rounded-tl-sm shadow-sm';
       }
       
-      // Explicit Gray for standard Users
       const colorClass = getUserColor(userId);
       return `${colorClass} border rounded-2xl rounded-tl-sm shadow-sm`;
   };
@@ -268,6 +267,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   };
 
   // Initial Fetch & Realtime Subscription
+  // Removed notificationsEnabled from dependency array to prevent subscription churn
   useEffect(() => {
     if (!user) return;
 
@@ -315,12 +315,15 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     const messageChannel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // Fetch sender details including full_name & role
+        // Safe check for current user from Ref
+        const currentUser = userRef.current;
+        
+        // Fetch sender details
         const { data } = await supabase
           .from('profiles')
           .select('username, full_name, role')
           .eq('id', payload.new.user_id)
-          .single();
+          .maybeSingle(); // Use maybeSingle to prevent errors if profile missing
         
         const newMessage: ChatMessage = {
            id: payload.new.id,
@@ -332,16 +335,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
            role: data?.role
         };
         
-        // Notification Logic
-        if (user.id !== payload.new.user_id) {
-           playNotificationSound();
-           sendSystemNotification(data?.full_name || data?.username || 'Secure Channel', payload.new.content);
-        }
-
         setMessages(prev => {
             if (prev.some(msg => msg.id === newMessage.id)) return prev;
             return [...prev, newMessage];
         });
+
+        // Notification Logic
+        if (currentUser && currentUser.id !== payload.new.user_id) {
+           playNotificationSound();
+           sendSystemNotification(data?.full_name || data?.username || 'Secure Channel', payload.new.content);
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -349,7 +352,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         }
       });
 
-    // Subscribe to Profile Updates to reflect role changes in real-time
     const profileChannel = supabase
       .channel('public:profiles_chat')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
@@ -371,13 +373,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(profileChannel);
     };
-  }, [user, notificationsEnabled]); // Re-subscribe if notifications toggle to ensure closure captures new state
+  }, [user?.id]); // Only re-subscribe if user ID changes, not on toggle
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
     
-    // Resume audio context on user interaction (send) if suspended
     if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume();
     }
