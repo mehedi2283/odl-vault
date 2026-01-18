@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import Layout from './src/components/Layout';
+import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import UsersPage from './pages/UsersPage';
 import ChatPage from './pages/ChatPage';
 import DeadDropPage from './pages/DeadDropPage';
-import ProtectedRoute from './src/components/ProtectedRoute';
+import UsersPage from './pages/UsersPage';
+import ProtectedRoute from './components/ProtectedRoute';
 import { RoutePath, User } from './types';
 import { supabase } from './services/supabase';
 
@@ -16,7 +16,6 @@ const LoginRoute = ({ user }: { user: User | null }) => {
   
   if (user) {
     // If we have a 'from' location in state, redirect there
-    // The state object is preserved by ProtectedRoute's <Navigate state={{ from: location }} />
     const from = location.state?.from?.pathname 
       ? location.state.from.pathname + (location.state.from.search || '') + (location.state.from.hash || '')
       : RoutePath.DASHBOARD;
@@ -33,79 +32,34 @@ const App: React.FC = () => {
   // Helper to fetch profile role/name in background
   const fetchUserProfile = async (uid: string, email?: string) => {
     try {
-      // 1. Try to get the EXACT profile match (Auth ID === Profile ID)
-      const { data: exactProfile, error: exactError } = await supabase
+      const { data: exactProfile } = await supabase
         .from('profiles')
-        .select('*') // Wildcard select is safer for varying schemas
+        .select('*')
         .eq('id', uid)
         .maybeSingle();
       
-      // 2. Handle "Manual Entry" Mismatch (Orphaned Profile)
-      // Scenario: User manually added row in Supabase with random ID but correct Email.
-      // We must migrate this permission to the correct Auth ID.
       if (!exactProfile && email) {
-          const { data: orphanedProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('username', email)
-            .maybeSingle();
-            
-          if (orphanedProfile) {
-              console.log("Found manual profile entry with mismatching ID. Migrating permissions...");
-              
-              // A. Delete the manual entry (Wrong ID)
-              await supabase.from('profiles').delete().eq('id', orphanedProfile.id);
-              
-              // B. Create new entry with CORRECT Auth ID and preserve the manual Role
-              const { error: migrationError } = await supabase.from('profiles').insert({
-                  id: uid,
-                  username: email,
-                  role: orphanedProfile.role, // KEEP THE MANUAL ROLE
-                  full_name: orphanedProfile.full_name
-              });
-              
-              if (!migrationError) {
-                  // Retry fetch to get the correct user object
-                  return fetchUserProfile(uid, email);
-              } else {
-                  console.error("Migration failed", migrationError);
-              }
-          }
-      }
-
-      // 3. Self-Healing (No profile found at all)
-      if (!exactProfile) {
-          console.log("Profile missing. Creating default...");
            const isOwner = email === 'babu.octopidigital@gmail.com';
-           const { error: insertError } = await supabase.from('profiles').insert({
+           await supabase.from('profiles').insert({
               id: uid,
               username: email,
               role: isOwner ? 'grand_admin' : 'user',
               full_name: isOwner ? 'Grand Administrator' : undefined
            });
-           
-           if (!insertError) {
-              // Retry fetch
-              return fetchUserProfile(uid, email);
-           }
+           return fetchUserProfile(uid, email);
       }
 
-      // 4. Update State if we have a profile (either found initially or after migration/creation)
-      // We fetch again or use the exactProfile if it existed
-      const { data: finalProfile } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-
-      if (finalProfile) {
-         // Force Override for Specific Email (Fail-safe for owner)
-         if (email === 'babu.octopidigital@gmail.com' && finalProfile.role !== 'grand_admin') {
+      if (exactProfile) {
+         if (email === 'babu.octopidigital@gmail.com' && exactProfile.role !== 'grand_admin') {
              await supabase.from('profiles').update({ role: 'grand_admin' }).eq('id', uid);
-             finalProfile.role = 'grand_admin';
+             exactProfile.role = 'grand_admin';
          }
 
          setUser(prev => prev ? { 
            ...prev, 
-           username: finalProfile.username || prev.username, 
-           full_name: finalProfile.full_name,
-           role: (finalProfile.role as User['role']) || 'user' 
+           username: exactProfile.username || prev.username, 
+           full_name: exactProfile.full_name,
+           role: (exactProfile.role as User['role']) || 'user' 
          } : null);
       }
     } catch (error) {
@@ -114,28 +68,39 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // 1. Check active session on load
+    // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser({
           id: session.user.id,
+          email: session.user.email,
           username: session.user.email || 'Operative',
-          role: 'user' // Default to user, upgrade later
+          role: 'user' // Default until profile fetch
         });
         fetchUserProfile(session.user.id, session.user.email);
       }
+    }).catch(err => {
+      console.error("Session check failed", err);
+    }).finally(() => {
       setLoading(false);
     });
 
-    // 2. Listen for auth changes (Login, Logout)
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setUser({
-          id: session.user.id,
-          username: session.user.email || 'Operative',
-          role: 'user'
+        // Only update if ID changes to avoid redundant updates during profile fetch
+        setUser(prev => {
+          if (prev?.id === session.user.id) return prev;
+          return {
+            id: session.user.id,
+            email: session.user.email,
+            username: session.user.email || 'Operative',
+            role: 'user'
+          };
         });
-        fetchUserProfile(session.user.id, session.user.email);
+        if (session.user.id !== user?.id) {
+           fetchUserProfile(session.user.id, session.user.email);
+        }
       } else {
         setUser(null);
       }
@@ -147,6 +112,9 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // Clear persistent lock state on logout
+    localStorage.removeItem('odl_is_locked');
+    localStorage.removeItem('odl_last_active');
     setUser(null);
   };
 
@@ -157,8 +125,6 @@ const App: React.FC = () => {
       </div>
     );
   }
-
-  const isAuthorizedAdmin = user?.role === 'admin' || user?.role === 'grand_admin';
 
   return (
     <HashRouter>
@@ -200,22 +166,19 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        
+
         <Route
           path={RoutePath.USERS}
           element={
             <ProtectedRoute isAuthenticated={!!user}>
-              {isAuthorizedAdmin ? (
-                <Layout onLogout={handleLogout} user={user}>
-                  <UsersPage />
-                </Layout>
-              ) : (
-                <Navigate to={RoutePath.DASHBOARD} replace />
-              )}
+              <Layout onLogout={handleLogout} user={user}>
+                <UsersPage user={user} />
+              </Layout>
             </ProtectedRoute>
           }
         />
-
+        
+        {/* Catch-all redirects to Dashboard (which handles auth check) */}
         <Route path="*" element={<Navigate to={RoutePath.DASHBOARD} replace />} />
       </Routes>
     </HashRouter>

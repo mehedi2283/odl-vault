@@ -1,68 +1,50 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Plus, 
-  Trash2, 
-  Eye, 
-  EyeOff, 
-  Copy, 
-  Globe, 
-  Shield, 
-  Search,
-  FileText,
-  Lock,
-  Inbox,
-  ChevronRight,
-  ChevronDown,
-  ChevronLeft,
-  Building,
-  Pencil,
-  Link as LinkIcon,
-  ExternalLink,
-  Loader2,
-  Terminal,
-  AlertCircle,
-  Check,
-  X,
-  Folder,
-  FolderPlus,
-  Move,
-  Home,
-  ArrowUpLeft,
-  CheckSquare,
-  Square,
-  ListChecks,
-  Sparkles,
-  RefreshCcw
+  Plus, Trash2, Eye, EyeOff, Copy, Shield, ShieldAlert, Search, Lock, 
+  ChevronRight, ChevronDown, ChevronLeft, Building, Pencil, 
+  Loader2, Folder, FolderPlus, Square, CheckSquare, 
+  RefreshCcw, Home, FileText, Globe, Calendar, Server,
+  X, Move, CheckCheck, ListFilter, ListChecks, Settings,
+  Link as LinkIcon, Save, Type, AlignLeft, Mail, Phone, ArrowRightLeft,
+  LayoutTemplate, Clock, Hash, Database, ChevronUp, Tag, Code, Terminal,
+  PlayCircle, PauseCircle, FileJson, Table as TableIcon, RefreshCw, AlertCircle,
+  MoreHorizontal, AlertTriangle, ArrowRight, User as UserIcon, CheckCircle2,
+  ExternalLink, Check, MousePointerClick, Briefcase, Ban
 } from 'lucide-react';
-import Button from '../src/components/Button';
-import Input from '../src/components/Input';
-import Modal from '../src/components/Modal';
-import Toast from '../src/components/Toast';
-import CipherText from '../src/components/CipherText';
-import { StoredCredential, FormSubmission, RoutePath, User, Folder as FolderType } from '../types';
+import { AnimatePresence, motion } from 'framer-motion';
+import Button from '../components/Button';
+import Input from '../components/Input';
+import Modal from '../components/Modal';
+import Toast from '../components/Toast';
+import CipherText from '../components/CipherText';
+import { StoredCredential, FormSubmission, User, Folder as FolderType } from '../types';
 import { supabase } from '../services/supabase';
-import { RealtimeChannel } from '@supabase/supabase-js';
 
-// Form Types Definition
-const FORM_TYPES = [
-  'SMS Onboarding form',
-  'Jack Ryan A.I. 1st Call',
-  'Call List Submission Form',
-  'Jack Ryan A.I. Client Onboarding Form'
-];
+// --- TYPES & CONSTANTS ---
 
-// Mapping Forms to Specific Tables
-const TABLE_MAP: Record<string, string> = {
-  'SMS Onboarding form': 'sms_onboarding_submissions',
-  'Jack Ryan A.I. 1st Call': 'first_call_submissions',
-  'Call List Submission Form': 'call_list_submissions',
-  'Jack Ryan A.I. Client Onboarding Form': 'client_onboarding_submissions'
-};
+type FieldType = 'text' | 'textarea' | 'email' | 'phone';
 
-// Default Palette for CRMs without specific branding
+interface FormField {
+  id: string;
+  name: string;
+  type: FieldType;
+  mappedKey?: string; 
+}
+
+interface FormDefinition {
+  id: string;
+  name: string;
+  folderId: string | null;
+  webhookKey: string; 
+  webhookUrl: string;
+  fields: FormField[];
+  createdAt: string;
+  status: 'draft' | 'active'; 
+}
+
+// Light Mode Colors for CRM Tags
 const CRM_COLORS = [
   { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', hover: 'hover:bg-blue-100' },
   { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', hover: 'hover:bg-emerald-100' },
@@ -71,143 +53,51 @@ const CRM_COLORS = [
   { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', hover: 'hover:bg-rose-100' },
   { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', hover: 'hover:bg-indigo-100' },
   { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', hover: 'hover:bg-cyan-100' },
-  { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', border: 'border-fuchsia-200', hover: 'hover:bg-fuchsia-100' },
 ];
 
-// Custom Brand Overrides
-const CRM_BRAND_DEFAULTS: Record<string, typeof CRM_COLORS[0]> = {
-  'boomtown': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', hover: 'hover:bg-orange-100' },
-  'boom town': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', hover: 'hover:bg-orange-100' },
-  'cinc': { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', hover: 'hover:bg-cyan-100' },
-  'follow up boss': { bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-200', hover: 'hover:bg-sky-100' },
-  'fub': { bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-200', hover: 'hover:bg-sky-100' },
-  'hubspot': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', hover: 'hover:bg-orange-100' },
-  'salesforce': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', hover: 'hover:bg-blue-100' },
-  'kvcore': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', hover: 'hover:bg-emerald-100' },
-  'chime': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', hover: 'hover:bg-violet-100' },
-  'lofty': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', hover: 'hover:bg-violet-100' },
-  'redfin': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', hover: 'hover:bg-red-100' },
-  'zillow': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', hover: 'hover:bg-blue-100' },
+const COMMON_SERVICES = [
+  'Salesforce', 'HubSpot', 'Zoho', 'Pipedrive', 'Zendesk', 
+  'Slack', 'Jira', 'Asana', 'Trello', 'Monday', 
+  'ClickUp', 'Notion', 'Airtable', 'Figma', 'Intercom',
+  'Gmail', 'Outlook', 'AWS', 'Azure', 'Google Cloud',
+  'Shopify', 'WordPress', 'Stripe', 'PayPal'
+];
+
+// "Goo & Simple" Animation Variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05
+    }
+  }
 };
 
-const COMMON_CRMS = [
-  'HubSpot', 'Salesforce', 'Zoho CRM', 'Pipedrive', 'Monday.com', 
-  'CINC', 'BoomTown', 'KVCore', 'Follow Up Boss', 'LionDesk', 
-  'RealtyJuggler', 'Top Producer', 'Wise Agent', 'Chime', 'Brivity', 
-  'Market Leader', 'Lofty', 'Sierra Interactive', 'Redfin', 'Zillow Premier Agent'
-];
-
-// Mock Data for Fallback (if DB connection fails)
-const FALLBACK_SUBMISSIONS: FormSubmission[] = [
-  { 
-    id: 'sub_demo_1', 
-    source: 'SMS Onboarding form', 
-    timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), 
-    status: 'processed', 
-    ipAddress: '192.168.1.45', 
-    payload: { 
-      "business_name": "Apex Realty Group", 
-      "industry": "Real Estate", 
-      "full_name": "John Doe",
-      "primary_bot_goal": "Book seller appointments",
-      "note": "Demo Data - Database Table Missing"
+const itemVariants = {
+  hidden: { 
+    opacity: 0, 
+    scale: 0.8,
+    filter: 'blur(8px)'
+  },
+  show: { 
+    opacity: 1, 
+    scale: 1,
+    filter: 'blur(0px)',
+    transition: { 
+      type: "spring",
+      stiffness: 150,
+      damping: 15,
+      mass: 0.8
     } 
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.9,
+    filter: 'blur(4px)',
+    transition: { duration: 0.2 }
   }
-];
-
-const SETUP_SQL = `-- Run this in your Supabase SQL Editor to create the required tables
-
--- 1. Folders Table
-create table if not exists public.folders (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  parent_id uuid references public.folders(id) on delete cascade,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-alter table public.folders enable row level security;
-drop policy if exists "Allow all access for authenticated users" on public.folders;
-create policy "Allow all access for authenticated users" on public.folders for all to authenticated using (true);
-
--- 2. Credentials Table
-create table if not exists public.credentials (
-  id uuid default gen_random_uuid() primary key,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  client_name text,
-  service_name text,
-  crm_link text,
-  username text,
-  password text,
-  last_updated timestamp with time zone default timezone('utc'::text, now()),
-  folder_id uuid references public.folders(id) on delete set null
-);
-alter table public.credentials enable row level security;
-drop policy if exists "Allow all access for authenticated users" on public.credentials;
-create policy "Allow all access for authenticated users" on public.credentials for all to authenticated using (true);
-
--- 3. Form Submission Tables (All 4 Types)
--- (Simplified for brevity, ensure all 4 are created with similar policies)
-create table if not exists public.sms_onboarding_submissions (
-  id uuid default gen_random_uuid() primary key,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  status text default 'pending',
-  ip_address text,
-  payload jsonb default '{}'::jsonb,
-  source text default 'SMS Onboarding form'
-);
-alter table public.sms_onboarding_submissions enable row level security;
-drop policy if exists "Allow all access for authenticated users" on public.sms_onboarding_submissions;
-create policy "Allow all access for authenticated users" on public.sms_onboarding_submissions for all to authenticated using (true);
--- Repeat for other 3 form tables (first_call_submissions, call_list_submissions, client_onboarding_submissions)
-
--- 4. Profiles Table (Updated)
-create table if not exists public.profiles (
-  id uuid references auth.users on delete cascade not null primary key,
-  username text,
-  full_name text,
-  role text default 'user',
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  constraint profiles_role_check check (role in ('grand_admin', 'admin', 'user'))
-);
--- Ensure full_name column exists if table was created previously
-alter table public.profiles add column if not exists full_name text;
-
-alter table public.profiles enable row level security;
-drop policy if exists "Allow all access for authenticated users" on public.profiles;
-create policy "Allow all access for authenticated users" on public.profiles for all to authenticated using (true);
-
--- 5. Dead Drops Table
-create table if not exists public.dead_drops (
-  id uuid default gen_random_uuid() primary key,
-  encrypted_content text not null,
-  iv text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-alter table public.dead_drops enable row level security;
-drop policy if exists "Allow authenticated access" on public.dead_drops;
-create policy "Allow authenticated access" on public.dead_drops for all to authenticated using (true);
-
--- 6. Messages Table (Real-time Chat)
-create table if not exists public.messages (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references public.profiles(id) not null,
-  content text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-alter table public.messages enable row level security;
-drop policy if exists "Allow all access for authenticated users" on public.messages;
-create policy "Allow all access for authenticated users" on public.messages for all to authenticated using (true);
-
--- 7. Triggers
-create or replace function public.handle_new_user() 
-returns trigger as $$
-begin
-  insert into public.profiles (id, username, role)
-  values (new.id, new.email, 'user');
-  return new;
-end;
-$$ language plpgsql security definer;
--- Trigger hookup assumed
-`;
+};
 
 interface DashboardPageProps {
   user: User | null;
@@ -215,167 +105,250 @@ interface DashboardPageProps {
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const navigate = useNavigate();
-  // Navigation State
   const [activeMainTab, setActiveMainTab] = useState<'credentials' | 'submissions'>('credentials');
-  const [activeFormTab, setActiveFormTab] = useState<string>(FORM_TYPES[0]);
-
-  // Data State
+  
+  // --- PERMISSIONS ---
+  const hasVaultAccess = user?.role !== 'user';
+  const canMutate = user?.role === 'grand_admin' || user?.role === 'master_admin'; // Edit/Add/Delete
+  
+  // --- CORE DATA STATE ---
   const [credentials, setCredentials] = useState<StoredCredential[]>([]);
   const [folders, setFolders] = useState<FolderType[]>([]);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
-  const [formCounts, setFormCounts] = useState<Record<string, number>>({}); 
+  const [forms, setForms] = useState<FormDefinition[]>([]); 
+  const [activeFormSubmissions, setActiveFormSubmissions] = useState<FormSubmission[]>([]);
+  
+  // --- LOADING STATES ---
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+
+  // --- NAVIGATION & PAGINATION STATE (Separated for Stability) ---
+  const [credFolderId, setCredFolderId] = useState<string | null>(null);
+  const [formFolderId, setFormFolderId] = useState<string | null>(null);
+  const [credPage, setCredPage] = useState(1);
+  const [formPage, setFormPage] = useState(1);
+
+  // Helper to fetch/set current context based on active tab
+  const currentFolderId = activeMainTab === 'credentials' ? credFolderId : formFolderId;
+  const currentPage = activeMainTab === 'credentials' ? credPage : formPage;
+
+  const setCurrentFolderId = (id: string | null) => {
+    if (activeMainTab === 'credentials') {
+        setCredFolderId(id);
+        setCredPage(1); // Always reset page when changing folders
+    } else {
+        setFormFolderId(id);
+        setFormPage(1);
+    }
+    setSelectedItems(new Set()); // Clear selection on folder change
+  };
+
+  const setCurrentPage = (page: number) => {
+      if (activeMainTab === 'credentials') setCredPage(page);
+      else setFormPage(page);
+  };
+
+  // --- FORM DETAIL STATE ---
+  const [currentFormId, setCurrentFormId] = useState<string | null>(null); 
+  const [formViewMode, setFormViewMode] = useState<'overview' | 'builder' | 'mapping'>('overview');
+
+  // --- MODAL STATES ---
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [isCreateFormModalOpen, setIsCreateFormModalOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
-  const [demoMode, setDemoMode] = useState(false);
+  const [isDeleteRecordModalOpen, setIsDeleteRecordModalOpen] = useState(false);
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
   
-  // Selection State
+  // --- ACTION STATE ---
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; id: string | null, type: 'credential' | 'folder' | 'bulk' | 'form' }>({ isOpen: false, id: null, type: 'credential' });
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  
-  // Notification State
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  // Delete Modal State
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; id: string | null, type: 'credential' | 'folder' | 'bulk' }>({ isOpen: false, id: null, type: 'credential' });
-
-  // Loading State
-  const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
-  const [isSavingCredential, setIsSavingCredential] = useState(false);
-  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   
-  // Modal State
-  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
-  
-  // Search & Pagination & Filter State
+  // --- FILTERS & EDITING ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCrmFilter, setSelectedCrmFilter] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
-
-  // Status Dropdown State
-  const [openStatusId, setOpenStatusId] = useState<string | null>(null);
-
-  // CRM Dropdown State
-  const [isCrmDropdownOpen, setIsCrmDropdownOpen] = useState(false);
-  const crmFilterRef = useRef<HTMLDivElement>(null);
-
-  // Editing Submission State
-  const [editingSubmission, setEditingSubmission] = useState<FormSubmission | null>(null);
-  const [isEditSubmissionModalOpen, setIsEditSubmissionModalOpen] = useState(false);
-  
-  // Form State for Credentials
-  const [newCred, setNewCred] = useState<Omit<StoredCredential, 'id' | 'lastUpdated'>>({ 
-    clientName: '',
-    serviceName: '', 
-    crmLink: '',
-    username: '', 
-    password: '',
-    folderId: null
-  });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showCrmSuggestions, setShowCrmSuggestions] = useState(false);
-  const crmInputWrapperRef = useRef<HTMLDivElement>(null);
-  
-  // Folder Creation State
+  const [newCred, setNewCred] = useState<Omit<StoredCredential, 'id' | 'lastUpdated'>>({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null });
   const [newFolderName, setNewFolderName] = useState('');
+  const [showCrmDropdown, setShowCrmDropdown] = useState(false);
   
-  // Move Credential State
-  const [moveCredentialId, setMoveCredentialId] = useState<string | null>(null); // Kept for single move
-  const [selectedMoveFolderId, setSelectedMoveFolderId] = useState<string | null>(null);
+  // --- SUBMISSION & MAPPING STATE ---
+  const [viewingSubmission, setViewingSubmission] = useState<FormSubmission & { mapped_data?: Record<string, any> } | null>(null);
+  const [latestPayload, setLatestPayload] = useState<Record<string, any> | null>(null);
+  const [mappingReferenceId, setMappingReferenceId] = useState<string | null>(null);
+  const [showRawPayload, setShowRawPayload] = useState(false);
+  const [activeMappingFieldId, setActiveMappingFieldId] = useState<string | null>(null);
+  const [mappingSearchQuery, setMappingSearchQuery] = useState('');
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const [isSubmissionDropdownOpen, setIsSubmissionDropdownOpen] = useState(false);
 
-  // Email Suggestions State
-  const [showEmailSuggestions, setShowEmailSuggestions] = useState(false);
-  const emailInputWrapperRef = useRef<HTMLDivElement>(null);
+  // --- REFS ---
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
+  const submissionDropdownRef = useRef<HTMLDivElement>(null);
+  const crmDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Refs for Realtime
-  const activeFormTabRef = useRef(activeFormTab);
+  const ITEMS_PER_PAGE = 6;
+  const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
 
-  // Constants
-  const ITEMS_PER_PAGE_CREDENTIALS = 8; // 8 items per page as requested
-  const ITEMS_PER_PAGE_SUBMISSIONS = 10;
-
+  // --- INITIAL LOAD ---
   useEffect(() => {
-    activeFormTabRef.current = activeFormTab;
-  }, [activeFormTab]);
+    if (user && hasVaultAccess) fetchData();
+  }, [user, hasVaultAccess]);
 
-  // Click outside listener for status dropdown, CRM suggestions, Email suggestions, and CRM Filter
+  // Click Outside Handlers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      setOpenStatusId(null);
-      
-      if (crmInputWrapperRef.current && !crmInputWrapperRef.current.contains(event.target as Node)) {
-        setShowCrmSuggestions(false);
+      if (submissionDropdownRef.current && !submissionDropdownRef.current.contains(event.target as Node)) {
+          setIsSubmissionDropdownOpen(false);
       }
-
-      if (emailInputWrapperRef.current && !emailInputWrapperRef.current.contains(event.target as Node)) {
-        setShowEmailSuggestions(false);
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target as Node)) {
+          setIsStatusDropdownOpen(false);
       }
-      
-      if (crmFilterRef.current && !crmFilterRef.current.contains(event.target as Node)) {
-        setIsCrmDropdownOpen(false);
+      if (crmDropdownRef.current && !crmDropdownRef.current.contains(event.target as Node)) {
+          setShowCrmDropdown(false);
       }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // --- HELPER FUNCTIONS ---
-  const formatLabel = (key: string) => {
-    return key
-      .replace(/_/g, ' ')
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .toLowerCase()
-      .replace(/\b\w/g, c => c.toUpperCase());
+  useEffect(() => {
+    if (editingId) {
+       const cred = credentials.find(c => c.id === editingId);
+       if (cred) setNewCred({ clientName: cred.clientName, serviceName: cred.serviceName, crmLink: cred.crmLink, username: cred.username, password: cred.password, folderId: cred.folderId });
+    }
+  }, [editingId, credentials]);
+
+  // --- DATA FETCHING ---
+  const fetchData = async () => {
+    try {
+      setIsLoadingData(true);
+      // Fetch Credentials
+      const { data: credsData, error: credsError } = await supabase.from('credentials').select('*').order('last_updated', { ascending: false });
+      if (credsError) throw credsError;
+      if (credsData) {
+        setCredentials(credsData.map((item: any) => ({
+          id: item.id,
+          clientName: item.client_name,
+          serviceName: item.service_name,
+          crmLink: item.crm_link || '',
+          username: item.username || '',
+          password: item.password || '',
+          lastUpdated: new Date(item.last_updated),
+          folderId: item.folder_id || null
+        })));
+      }
+
+      // Fetch Folders
+      const { data: foldersData } = await supabase.from('folders').select('*').order('name', { ascending: true });
+      if (foldersData) {
+        setFolders(foldersData.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          parentId: item.parent_id,
+          createdAt: item.created_at,
+          type: item.type // Fetch type from DB
+        })));
+      }
+
+      // Fetch Forms
+      const { data: formsData } = await supabase.from('forms').select('*').order('created_at', { ascending: false });
+      if (formsData) {
+        setForms(formsData.map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          folderId: f.folder_id,
+          webhookKey: f.webhook_key, 
+          webhookUrl: `${BASE_WEBHOOK_URL}?key=${f.webhook_key}`,
+          fields: f.fields || [],
+          createdAt: f.created_at,
+          status: f.status || 'draft'
+        })));
+      }
+
+    } catch (error: any) { 
+        console.warn('Error fetching data', error);
+        setToast({ message: "Sync error. Check connection or schema.", type: 'error' });
+    } 
+    finally { setIsLoadingData(false); }
+  };
+
+  const fetchFormSubmissions = async (formId: string) => {
+      setIsLoadingSubmissions(true);
+      try {
+          const { data, error } = await supabase
+            .from('form_submissions')
+            .select('*')
+            .eq('form_id', formId)
+            .order('created_at', { ascending: false });
+            
+          if (error) throw error;
+          
+          if (data) {
+              const mappedSubmissions = data.map((item: any) => ({
+                  id: item.id,
+                  source: item.source || 'Unknown Source',
+                  timestamp: item.created_at,
+                  status: item.status || 'pending',
+                  ipAddress: item.ip_address || 'Hidden',
+                  payload: item.payload || {},
+                  mapped_data: item.mapped_data || null
+              }));
+              setActiveFormSubmissions(mappedSubmissions);
+              
+              if (mappedSubmissions.length > 0) {
+                  setLatestPayload(mappedSubmissions[0].payload);
+                  setMappingReferenceId(mappedSubmissions[0].id);
+              }
+          }
+      } catch (err) {
+          console.error("Failed to fetch form submissions", err);
+          setToast({ message: "Failed to load submissions for this form", type: 'error' });
+      } finally {
+          setIsLoadingSubmissions(false);
+      }
+  };
+
+  useEffect(() => {
+      setActiveFormSubmissions([]);
+      setViewingSubmission(null);
+      setLatestPayload(null);
+      setMappingReferenceId(null);
+      if (currentFormId) fetchFormSubmissions(currentFormId);
+  }, [currentFormId]);
+
+  // --- HELPERS ---
+  const flattenPayload = (obj: any, prefix = ''): Record<string, any> => {
+    let result: Record<string, any> = {};
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            const newKey = prefix ? `${prefix}.${key}` : key;
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                Object.assign(result, flattenPayload(value, newKey));
+            } else {
+                result[newKey] = value;
+            }
+        }
+    }
+    return result;
+  };
+
+  const getNestedValue = (obj: any, path: string): any => {
+      if (!path) return undefined;
+      return path.split('.').reduce((acc, part) => acc && acc[part], obj);
   };
 
   const getCrmStyle = (crmName: string) => {
     if (!crmName) return CRM_COLORS[0];
-    
-    // Check for specific brands first
-    const lowerName = crmName.toLowerCase();
-    const brandMatch = Object.keys(CRM_BRAND_DEFAULTS).find(brand => lowerName.includes(brand));
-    
-    if (brandMatch) {
-        return CRM_BRAND_DEFAULTS[brandMatch];
-    }
-
-    // Default hash function for others
     let hash = 0;
-    for (let i = 0; i < crmName.length; i++) {
-      hash = crmName.charCodeAt(i) + ((hash << 5) - hash);
-    }
+    for (let i = 0; i < crmName.length; i++) hash = crmName.charCodeAt(i) + ((hash << 5) - hash);
     const index = Math.abs(hash) % CRM_COLORS.length;
     return CRM_COLORS[index];
   };
 
-  // Get unique CRMs from credentials, case-insensitive logic for uniqueness
-  const uniqueCrms = useMemo(() => {
-    const map = new Map<string, string>();
-    credentials.forEach(c => {
-        if(c.serviceName) {
-            const lowerKey = c.serviceName.toLowerCase();
-            if(!map.has(lowerKey)) {
-                map.set(lowerKey, c.serviceName);
-            } else {
-                const currentStored = map.get(lowerKey);
-                if (c.serviceName === c.serviceName.toUpperCase() && currentStored !== c.serviceName) {
-                    map.set(lowerKey, c.serviceName);
-                }
-            }
-        }
-    });
-    return Array.from(map.values()).sort();
-  }, [credentials]);
-
-  // Get unique Emails from credentials
-  const uniqueEmails = useMemo(() => {
-    const emails = new Set(credentials.map(c => c.username).filter(val => val && val.trim() !== ''));
-    return Array.from(emails).sort();
-  }, [credentials]);
-
-  // Breadcrumb Path Generator
   const breadcrumbPath = useMemo(() => {
     if (!currentFolderId) return [];
     const path: FolderType[] = [];
@@ -397,739 +370,868 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       });
   };
 
-  const clearSelection = () => setSelectedItems(new Set());
-
-  const handleSelectAll = (allIds: string[]) => {
-      setSelectedItems(new Set(allIds));
+  const copyToClipboard = (text: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setToast({ message: "Copied to clipboard", type: "success" });
   };
 
-  // --- SUPABASE DATA FETCHING ---
-  const fetchSingleCount = async (formType: string, tableName: string) => {
-    try {
-      const { count } = await supabase
-        .from(tableName)
-        .select('*', { count: 'exact', head: true });
-      
-      setFormCounts(prev => ({ ...prev, [formType]: count || 0 }));
-    } catch (err) {
-      console.warn(`Failed to fetch count for ${formType}`, err);
-    }
-  };
-
-  const updateAllCounts = async () => {
-    const formPromises = Object.entries(TABLE_MAP).map(async ([type, tableName]) => {
-      const { count, error } = await supabase.from(tableName).select('*', { count: 'exact', head: true });
-      if (error && (error.code === '42P01' || error.message?.includes('does not exist'))) {
-        return { type, count: 0, missing: true };
-      }
-      return { type, count: count || 0, missing: false };
-    });
-
-    const profilePromise = supabase.from('profiles').select('id', { count: 'exact', head: true }).limit(1).then(({ error }) => {
-       return { missing: error && (error.code === '42P01' || error.message?.includes('does not exist')) };
-    });
-
-    const [formResults, profileResult] = await Promise.all([Promise.all(formPromises), profilePromise]);
-    
-    const newCounts: Record<string, number> = {};
-    let missingTableDetected = profileResult.missing || false;
-
-    formResults.forEach(r => {
-      newCounts[r.type] = r.count;
-      if (r.missing) missingTableDetected = true;
-    });
-
-    setFormCounts(newCounts);
-    if (missingTableDetected) setDemoMode(true);
-  };
-
-  const fetchCredentialsAndFolders = async () => {
-    try {
-      setIsLoadingCredentials(true);
-      
-      // Fetch Credentials
-      const { data: credsData, error: credsError } = await supabase
-        .from('credentials')
-        .select('*')
-        .order('last_updated', { ascending: false });
-
-      if (credsError) throw credsError;
-
-      if (credsData) {
-        const mappedCredentials: StoredCredential[] = credsData.map((item: any) => ({
-          id: item.id,
-          clientName: item.client_name,
-          serviceName: item.service_name,
-          crmLink: item.crm_link || '',
-          username: item.username || '',
-          password: item.password || '',
-          lastUpdated: new Date(item.last_updated),
-          folderId: item.folder_id || null
-        }));
-        setCredentials(mappedCredentials);
-      }
-
-      // Fetch Folders
-      const { data: foldersData, error: foldersError } = await supabase
-        .from('folders')
-        .select('*')
-        .order('name', { ascending: true });
-        
-      if (foldersError && foldersError.code !== '42P01') throw foldersError; // Ignore missing table error for demo
-
-      if (foldersData) {
-        const mappedFolders: FolderType[] = foldersData.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          parentId: item.parent_id,
-          createdAt: item.created_at
-        }));
-        setFolders(mappedFolders);
-      }
-
-    } catch (error: any) {
-      if (!error.message?.includes('Could not find the table') && error.code !== '42P01') {
-        console.warn('Error fetching data:', error.message || error);
-      }
-    } finally {
-      setIsLoadingCredentials(false);
-    }
-  };
-
-  const fetchSubmissionsData = async (targetTab: string) => {
-    try {
-      setIsLoadingSubmissions(true);
-      const tableName = TABLE_MAP[targetTab];
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      if (data) {
-        const mappedSubmissions: FormSubmission[] = data.map((item: any) => ({
-          id: item.id,
-          source: item.source || targetTab,
-          status: item.status,
-          payload: item.payload || {},
-          ipAddress: item.ip_address || 'Unknown',
-          timestamp: item.created_at
-        }));
-        setSubmissions(mappedSubmissions);
-        setDemoMode(false);
-      }
-    } catch (error: any) {
-      if (error.message?.includes('Could not find the table') || error.code === '42P01') {
-        console.warn(`Table ${TABLE_MAP[targetTab]} missing. Enabling Demo Mode.`);
-        setSubmissions(FALLBACK_SUBMISSIONS.filter(s => s.source === targetTab));
-        setDemoMode(true);
-      } else {
-        console.error('Error fetching submissions:', error.message || error);
-        setSubmissions([]);
-      }
-    } finally {
-      setIsLoadingSubmissions(false);
-    }
-  };
-
-  useEffect(() => {
-    if (user?.role !== 'user') {
-      fetchCredentialsAndFolders();
-      updateAllCounts();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user?.role !== 'user' && activeMainTab === 'submissions') {
-      fetchSubmissionsData(activeFormTab);
-    }
-  }, [activeFormTab, activeMainTab, user]);
-
-  useEffect(() => {
-    if (user?.role === 'user') return;
-
-    const channels: RealtimeChannel[] = [];
-    
-    const credChannel = supabase
-      .channel('public:credentials')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'credentials' }, () => fetchCredentialsAndFolders())
-      .subscribe();
-    channels.push(credChannel);
-    
-    // Optional: Add folder realtime listener if needed, but fetchCredentialsAndFolders handles it via manual refetch usually
-
-    Object.entries(TABLE_MAP).forEach(([formType, tableName]) => {
-      const formChannel = supabase
-        .channel(`public:${tableName}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, () => {
-          fetchSingleCount(formType, tableName);
-          if (activeFormTabRef.current === formType) {
-             fetchSubmissionsData(formType);
-          }
-        })
-        .subscribe();
-      channels.push(formChannel);
-    });
-
-    return () => {
-      channels.forEach(ch => supabase.removeChannel(ch));
-    };
-  }, [user]);
-
-  // --- ACCESS RESTRICTION VIEW ---
-  if (user && user.role === 'user') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in p-6">
-        <div className="bg-amber-50 p-4 rounded-full mb-6 ring-8 ring-amber-50/50 shadow-inner">
-           <Shield className="h-12 w-12 text-amber-500" />
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Access Restricted</h2>
-        <p className="text-gray-500 max-w-md mb-8 leading-relaxed">
-          Your operative clearance is currently <strong>Level 1 (Pending)</strong>.
-          <br/>
-          ODL Vault modules are classified <span className="text-amber-600 font-medium">Level 3</span> and above.
-        </p>
-        <div className="bg-white border border-gray-200 rounded-2xl p-5 max-w-sm w-full text-left flex items-start space-x-4 shadow-sm">
-           <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-              <Lock className="h-5 w-5 text-gray-400" />
-           </div>
-           <div>
-              <p className="text-sm font-bold text-gray-900">Authorization Required</p>
-              <p className="text-xs text-gray-500 mt-1.5 leading-5">Access to encrypted vaults and form intelligence requires administrative approval. Please contact a Grand Administrator to upgrade your security profile.</p>
-           </div>
-        </div>
-        
-        <div className="mt-8 flex gap-4 w-full max-w-sm">
-             <Button onClick={() => window.location.reload()} variant="secondary" className="w-full justify-center">
-                <RefreshCcw className="h-4 w-4 mr-2" /> Verify Access
-             </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- HANDLERS (Same as before) ---
+  // --- ACTIONS ---
   const handleCreateFolder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-        const { error } = await supabase.from('folders').insert({
-            name: newFolderName,
-            parent_id: currentFolderId
-        });
-        if (error) throw error;
-        setToast({ message: "Folder created", type: 'success' });
-        await fetchCredentialsAndFolders();
-        setIsCreateFolderModalOpen(false);
-        setNewFolderName('');
-    } catch (error: any) {
-        if (error.code === '42P01' || error.message?.includes('Could not find the table') || error.message?.includes('schema cache')) {
-             setIsSqlModalOpen(true);
-        } else {
-            setToast({ message: `Error: ${error.message}`, type: 'error' });
-        }
-    }
-  };
-
-  const handleDeleteFolder = async (id: string) => {
-      const hasSubfolders = folders.some(f => f.parentId === id);
-      const hasCreds = credentials.some(c => c.folderId === id);
-
-      if (hasSubfolders || hasCreds) {
-          if (!window.confirm("This folder contains items. Deleting it will delete all contents. Continue?")) return;
-      }
-
-      setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' });
-      setFolders(prev => prev.filter(f => f.id !== id));
-      
-      const { error } = await supabase.from('folders').delete().eq('id', id);
-      if (error) {
-          fetchCredentialsAndFolders(); 
-          setToast({ message: "Failed to delete folder", type: 'error' });
-      } else {
-          setToast({ message: "Folder deleted", type: 'success' });
-      }
-  };
-
-  // ... (Other handlers identical to previous, ensuring no AI imports/calls remain)
-
-  const handleSaveCredential = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingCredential(true);
-    try {
-      if (editingId) {
-        await supabase.from('credentials').update({
-            client_name: newCred.clientName,
-            service_name: newCred.serviceName,
-            crm_link: newCred.crmLink,
-            username: newCred.username,
-            password: newCred.password,
-            folder_id: newCred.folderId,
-            last_updated: new Date().toISOString()
-          }).eq('id', editingId);
-          setToast({ message: "Credential updated successfully", type: 'success' });
-      } else {
-        await supabase.from('credentials').insert({
-            client_name: newCred.clientName,
-            service_name: newCred.serviceName,
-            crm_link: newCred.crmLink,
-            username: newCred.username,
-            password: newCred.password,
-            folder_id: currentFolderId, 
-            last_updated: new Date().toISOString()
-          });
-          setToast({ message: "New credential secured in vault", type: 'success' });
-      }
-      await fetchCredentialsAndFolders(); 
-      setIsAddModalOpen(false);
-      setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null });
-      setEditingId(null);
-      setShowCrmSuggestions(false);
-      setShowEmailSuggestions(false);
-    } catch (error: any) {
-       if (error.code === '42P01') {
-        alert("Setup Required: The 'credentials' table is missing.");
-        setIsSqlModalOpen(true);
-      } else {
-        setToast({ message: `Error: ${error.message}`, type: 'error' });
-      }
-    } finally {
-      setIsSavingCredential(false);
-    }
-  };
-
-  const handleMoveItems = async () => {
-      const itemsToMove = selectedItems.size > 0 
-          ? Array.from(selectedItems) 
-          : (moveCredentialId ? [moveCredentialId] : []);
-      
-      if (itemsToMove.length === 0) return;
-
+      e.preventDefault();
+      if (!newFolderName.trim()) return;
+      setIsProcessingAction(true);
       try {
-          const folderUpdates = [];
-          const credentialUpdates = [];
-
-          for (const id of itemsToMove) {
-              const isFolder = folders.some(f => f.id === id);
-              if (isFolder) {
-                  if (id === selectedMoveFolderId) continue;
-                   folderUpdates.push(id);
-              } else {
-                   credentialUpdates.push(id);
-              }
-          }
-
-          if (folderUpdates.length > 0) {
-              const { error } = await supabase.from('folders')
-                  .update({ parent_id: selectedMoveFolderId })
-                  .in('id', folderUpdates);
-              if (error) throw error;
-          }
-
-          if (credentialUpdates.length > 0) {
-              const { error } = await supabase.from('credentials')
-                  .update({ folder_id: selectedMoveFolderId })
-                  .in('id', credentialUpdates);
-              if (error) throw error;
-          }
+          // Determine type based on active tab
+          const folderType = activeMainTab === 'credentials' ? 'credential' : 'form';
           
-          setToast({ message: "Items moved successfully", type: 'success' });
-          await fetchCredentialsAndFolders();
-          setIsMoveModalOpen(false);
-          setMoveCredentialId(null);
-          setSelectedMoveFolderId(null);
-          clearSelection();
-      } catch (error: any) {
-          setToast({ message: "Failed to move items", type: 'error' });
-      }
-  };
+          const { data, error } = await supabase.from('folders').insert({
+              name: newFolderName,
+              parent_id: currentFolderId,
+              type: folderType
+          }).select().single();
 
-  const handleDuplicateCredential = async (cred: StoredCredential, e: React.MouseEvent) => {
-      e.stopPropagation();
-      try {
-          const { error } = await supabase.from('credentials').insert({
-              client_name: `${cred.clientName} (Copy)`,
-              service_name: cred.serviceName,
-              crm_link: cred.crmLink,
-              username: cred.username,
-              password: cred.password,
-              folder_id: cred.folderId,
-              last_updated: new Date().toISOString()
-          });
           if (error) throw error;
-          setToast({ message: "Credential duplicated", type: 'success' });
-          fetchCredentialsAndFolders();
-      } catch (error) {
-          setToast({ message: "Failed to duplicate", type: 'error' });
+
+          if (data) {
+              setFolders(prev => [...prev, {
+                  id: data.id,
+                  name: data.name,
+                  parentId: data.parent_id,
+                  createdAt: data.created_at,
+                  type: data.type
+              }]);
+              setIsCreateFolderModalOpen(false);
+              setNewFolderName('');
+              setToast({ message: "Folder created", type: "success" });
+          }
+      } catch (err: any) {
+          setToast({ message: err.message || "Failed to create folder", type: "error" });
+      } finally {
+          setIsProcessingAction(false);
       }
-  };
-
-  const openAddModal = () => {
-    setEditingId(null);
-    setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: currentFolderId });
-    setShowCrmSuggestions(false);
-    setShowEmailSuggestions(false);
-    setIsAddModalOpen(true);
-  };
-
-  const openEditModal = (cred: StoredCredential) => {
-    setEditingId(cred.id);
-    setNewCred({ clientName: cred.clientName, serviceName: cred.serviceName, crmLink: cred.crmLink, username: cred.username, password: cred.password, folderId: cred.folderId });
-    setShowCrmSuggestions(false);
-    setShowEmailSuggestions(false);
-    setIsAddModalOpen(true);
-  };
-
-  const openDeleteModal = (id: string, type: 'credential' | 'folder' | 'bulk', e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeleteConfirmation({ isOpen: true, id, type });
-  };
-
-  const openMoveModal = (id: string | null, currentFolder: string | null, e?: React.MouseEvent) => {
-      if (e) e.stopPropagation();
-      setMoveCredentialId(id);
-      setSelectedMoveFolderId(currentFolder);
-      setIsMoveModalOpen(true);
   };
 
   const confirmDelete = async () => {
     const { id, type } = deleteConfirmation;
-    if (type === 'bulk') {
-        const idsToDelete = Array.from(selectedItems);
-        const folderIds = idsToDelete.filter(id => folders.some(f => f.id === id));
-        const credIds = idsToDelete.filter(id => credentials.some(c => c.id === id));
-        setFolders(prev => prev.filter(f => !folderIds.includes(f.id)));
-        setCredentials(prev => prev.filter(c => !credIds.includes(c.id)));
-        if (folderIds.length > 0) await supabase.from('folders').delete().in('id', folderIds);
-        if (credIds.length > 0) await supabase.from('credentials').delete().in('id', credIds);
-        setToast({ message: `Deleted ${idsToDelete.length} items`, type: 'success' });
-        clearSelection();
-        setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' });
-        fetchCredentialsAndFolders();
-        return;
-    }
-    if (!id) return;
-    if (type === 'credential') {
-        setCredentials(prev => prev.filter(c => c.id !== id));
-        setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' });
-        const { error } = await supabase.from('credentials').delete().eq('id', id);
-        if(error) {
-            fetchCredentialsAndFolders();
-            setToast({ message: "Failed to delete credential", type: 'error' });
-        } else {
-            setToast({ message: "Credential removed from vault", type: 'success' });
+    setIsProcessingAction(true);
+    try {
+        if (type === 'bulk') {
+            const ids = Array.from(selectedItems);
+            if (activeMainTab === 'credentials') {
+                await supabase.from('credentials').delete().in('id', ids);
+                await supabase.from('folders').delete().in('id', ids);
+                setCredentials(prev => prev.filter(c => !ids.includes(c.id)));
+                setFolders(prev => prev.filter(f => !ids.includes(f.id)));
+            } else {
+                await supabase.from('forms').delete().in('id', ids);
+                setForms(prev => prev.filter(f => !ids.includes(f.id)));
+            }
+            setSelectedItems(new Set());
+            setToast({ message: `${ids.length} items deleted`, type: "success" });
+        } else if (id) {
+            if (type === 'credential') {
+                await supabase.from('credentials').delete().eq('id', id);
+                setCredentials(prev => prev.filter(c => c.id !== id));
+            } else if (type === 'folder') {
+                const { error } = await supabase.from('folders').delete().eq('id', id);
+                if (error) throw error;
+                setFolders(prev => prev.filter(f => f.id !== id));
+            } else if (type === 'form') {
+                await supabase.from('forms').delete().eq('id', id);
+                setForms(prev => prev.filter(f => f.id !== id));
+                if (currentFormId === id) setCurrentFormId(null);
+            }
+            setToast({ message: "Item deleted", type: "success" });
         }
-    } else {
-        await handleDeleteFolder(id);
+    } catch (err: any) {
+        if (err.code === '23503') {
+             setToast({ message: "Cannot delete folder not empty.", type: "error" });
+        } else {
+             setToast({ message: err.message || "Delete failed", type: "error" });
+        }
+    } finally {
+        setIsProcessingAction(false);
+        setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' });
     }
   };
 
-  const togglePassword = (id: string) => setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }));
-  const handleCopy = (text: string) => { if (!text) return; navigator.clipboard.writeText(text); setToast({ message: "Copied to clipboard", type: 'success' }); };
-  
-  const handleStatusChange = async (id: string, newStatus: 'pending' | 'processed' | 'flagged', e: React.MouseEvent) => {
-      e.stopPropagation();
-      setOpenStatusId(null);
-      setSubmissions(prev => prev.map(s => s.id === id ? { ...s, status: newStatus } : s));
-      const tableName = TABLE_MAP[activeFormTab];
-      await supabase.from(tableName).update({ status: newStatus }).eq('id', id);
-  };
-
-  const toggleStatusDropdown = (id: string, e: React.MouseEvent) => { e.stopPropagation(); setOpenStatusId(openStatusId === id ? null : id); };
-  const handleEditSubmissionClick = (submission: FormSubmission, e: React.MouseEvent) => { e.stopPropagation(); setEditingSubmission(JSON.parse(JSON.stringify(submission))); setIsEditSubmissionModalOpen(true); };
-  const handleSaveSubmission = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingSubmission) {
-      const tableName = TABLE_MAP[activeFormTab];
-      await supabase.from(tableName).update({ payload: editingSubmission.payload }).eq('id', editingSubmission.id);
-      setIsEditSubmissionModalOpen(false);
-      setEditingSubmission(null);
-      setToast({ message: "Submission data updated", type: 'success' });
-    }
-  };
-  const handlePayloadChange = (key: string, value: string) => {
-    if (editingSubmission) {
-      setEditingSubmission({ ...editingSubmission, payload: { ...editingSubmission.payload, [key]: value } });
-    }
-  };
-
-  // --- RENDERING ---
-  const filteredCredentials = credentials.filter(cred => {
-    if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        return (cred.clientName.toLowerCase().includes(q) || cred.serviceName.toLowerCase().includes(q)) &&
-               (selectedCrmFilter ? cred.serviceName.toLowerCase() === selectedCrmFilter.toLowerCase() : true);
-    }
-    return cred.folderId === currentFolderId && (selectedCrmFilter ? cred.serviceName.toLowerCase() === selectedCrmFilter.toLowerCase() : true);
-  });
-  const currentFolders = searchQuery ? [] : folders.filter(f => f.parentId === currentFolderId);
-  const filteredSubmissions = submissions.filter(s => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    const payloadValues = s.payload ? Object.values(s.payload) : [];
-    return s.id.toLowerCase().includes(q) || s.status.toLowerCase().includes(q) || s.ipAddress.includes(q) || payloadValues.some(val => String(val).toLowerCase().includes(q));
-  });
-
-  const totalSubmissionsCount = (Object.values(formCounts) as number[]).reduce((a, b) => a + b, 0);
-  const itemsPerPage = activeMainTab === 'credentials' ? ITEMS_PER_PAGE_CREDENTIALS : ITEMS_PER_PAGE_SUBMISSIONS;
-  const totalItems = activeMainTab === 'credentials' ? filteredCredentials.length + (searchQuery ? 0 : currentFolders.length) : filteredSubmissions.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-  const startStartIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startStartIndex + itemsPerPage;
-  
-  let displayFolders: FolderType[] = [];
-  let displayCredentials: StoredCredential[] = [];
-
-  if (activeMainTab === 'credentials') {
-      if (searchQuery) {
-          displayCredentials = filteredCredentials.slice(startStartIndex, endIndex);
-      } else {
-          const folderCount = currentFolders.length;
-          if (startStartIndex < folderCount) displayFolders = currentFolders.slice(startStartIndex, Math.min(endIndex, folderCount));
-          const slotsUsedByFolders = Math.max(0, Math.min(endIndex, folderCount) - startStartIndex);
-          const remainingSlots = itemsPerPage - slotsUsedByFolders;
-          if (remainingSlots > 0) {
-              let credStart = 0;
-              if (startStartIndex >= folderCount) credStart = startStartIndex - folderCount;
-              displayCredentials = filteredCredentials.slice(credStart, credStart + remainingSlots);
+  const handleBulkMove = async () => {
+      if (!moveTargetFolderId && moveTargetFolderId !== null) return; 
+      const ids = Array.from(selectedItems);
+      setIsProcessingAction(true);
+      
+      try {
+          if (activeMainTab === 'credentials') {
+              const credIds = credentials.filter(c => ids.includes(c.id)).map(c => c.id);
+              if (credIds.length > 0) {
+                  await supabase.from('credentials').update({ folder_id: moveTargetFolderId }).in('id', credIds);
+                  setCredentials(prev => prev.map(c => credIds.includes(c.id) ? { ...c, folderId: moveTargetFolderId } : c));
+              }
+              const folderIds = folders.filter(f => ids.includes(f.id)).map(f => f.id);
+              if (folderIds.length > 0) {
+                  await supabase.from('folders').update({ parent_id: moveTargetFolderId }).in('id', folderIds);
+                  setFolders(prev => prev.map(f => folderIds.includes(f.id) ? { ...f, parentId: moveTargetFolderId } : f));
+              }
+          } else {
+              const formIds = forms.filter(f => ids.includes(f.id)).map(f => f.id);
+              if (formIds.length > 0) {
+                  await supabase.from('forms').update({ folder_id: moveTargetFolderId }).in('id', formIds);
+                  setForms(prev => prev.map(f => formIds.includes(f.id) ? { ...f, folderId: moveTargetFolderId } : f));
+              }
           }
+          setToast({ message: "Items moved successfully", type: "success" });
+          setIsMoveModalOpen(false);
+          setSelectedItems(new Set());
+      } catch (err) {
+          setToast({ message: "Failed to move items", type: "error" });
+      } finally {
+          setIsProcessingAction(false);
       }
+  };
+
+  // --- FILTERING & PAGINATION LOGIC ---
+  
+  const currentFolders = folders.filter(f => {
+      const isCorrectType = activeMainTab === 'credentials' 
+          ? (f.type === 'credential' || !f.type) // Legacy support: null type shows in credentials
+          : (f.type === 'form');
+
+      if (searchQuery) return f.name.toLowerCase().includes(searchQuery.toLowerCase()) && isCorrectType;
+      
+      if (currentFolderId) {
+          // Inside a folder, we trust the parent/child relationship
+          return f.parentId === currentFolderId;
+      } else {
+          // Root Level: Must filter by type
+          return f.parentId === null && isCorrectType;
+      }
+  });
+
+  const currentCredentials = credentials.filter(c => {
+      if (searchQuery) return c.clientName.toLowerCase().includes(searchQuery.toLowerCase());
+      return c.folderId === currentFolderId;
+  });
+
+  const currentForms = forms.filter(f => {
+      if (searchQuery) return f.name.toLowerCase().includes(searchQuery.toLowerCase());
+      return f.folderId === currentFolderId;
+  });
+
+  const activeItems = activeMainTab === 'credentials' ? currentCredentials : currentForms;
+  
+  const totalItems = currentFolders.length + activeItems.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+  
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+
+  const displayFolders = currentFolders.slice(startIndex, endIndex);
+  
+  const slotsUsedByFolders = Math.max(0, Math.min(currentFolders.length, endIndex) - Math.max(0, startIndex));
+  const remainingSlots = ITEMS_PER_PAGE - slotsUsedByFolders;
+  
+  let displayItems: any[] = [];
+  if (remainingSlots > 0) {
+      const itemStartIndex = Math.max(0, startIndex - currentFolders.length);
+      displayItems = activeItems.slice(itemStartIndex, itemStartIndex + remainingSlots);
   }
-  const currentSubmissions = filteredSubmissions.slice(startStartIndex, endIndex);
 
-  const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) { setCurrentPage(page); window.scrollTo({ top: 0, behavior: 'smooth' }); } };
-  const PaginationControls = ({ variant = 'default' }: { variant?: 'default' | 'minimal' } = {}) => {
-    if (totalItems === 0 && searchQuery) return null;
+  // --- SELECTION LOGIC ---
+  const handleSelectAll = () => {
+      const allVisibleIds = [...displayFolders, ...displayItems].map(i => i.id);
+      
+      // If all visible items are already selected, deselect them
+      const allSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedItems.has(id));
+      
+      setSelectedItems(prev => {
+          const newSet = new Set(prev);
+          if (allSelected) {
+              allVisibleIds.forEach(id => newSet.delete(id));
+          } else {
+              allVisibleIds.forEach(id => newSet.add(id));
+          }
+          return newSet;
+      });
+  };
+
+  // --- RENDERERS ---
+  const activeForm = forms.find(f => f.id === currentFormId);
+  const computedMappedData = useMemo(() => {
+      if (!viewingSubmission || !activeForm) return {};
+      const dbMapped = viewingSubmission.mapped_data || {};
+      const liveMapped: Record<string, any> = {};
+      activeForm.fields.forEach(field => {
+          if (field.mappedKey) {
+              const val = getNestedValue(viewingSubmission.payload, field.mappedKey);
+              if (val !== undefined) liveMapped[field.name] = val;
+          }
+      });
+      return { ...dbMapped, ...liveMapped };
+  }, [viewingSubmission, activeForm]);
+
+  const PaginationControls = () => {
     if (totalPages <= 1) return null;
-    let startPage = Math.max(1, currentPage - 2);
-    let endPage = Math.min(totalPages, startPage + 4);
-    if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
-    const pageNumbers = []; for (let i = startPage; i <= endPage; i++) pageNumbers.push(i);
-    const content = (
-        <div className="flex items-center space-x-2">
-            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className={`rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors ${variant === 'minimal' ? 'p-1.5' : 'p-2'}`}><ChevronLeft className={variant === 'minimal' ? "h-4 w-4" : "h-5 w-5"} /></button>
-            <div className="hidden sm:flex items-center space-x-1">
-                {pageNumbers.map(page => (<button key={page} onClick={() => goToPage(page)} className={`rounded-lg font-medium transition-all duration-200 ${currentPage === page ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'} ${variant === 'minimal' ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm scale-105'}`}>{page}</button>))}
-            </div>
-            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className={`rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors ${variant === 'minimal' ? 'p-1.5' : 'p-2'}`}><ChevronRight className={variant === 'minimal' ? "h-4 w-4" : "h-5 w-5"} /></button>
-        </div>
-    );
-    if (variant === 'minimal') return content;
-    return <div className="flex items-center justify-center border-t border-gray-200 px-4 py-4 sm:px-6 bg-white rounded-b-2xl mt-20 transition-all">{content}</div>;
-  };
-
-  const StatusDropdown = ({ status, id }: { status: string, id: string }) => {
-    const isOpen = openStatusId === id;
-    let buttonClass = status === 'processed' ? "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100" : status === 'flagged' ? "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100" : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100";
     return (
-        <div className="relative">
-            <button onClick={(e) => toggleStatusDropdown(id, e)} className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border mb-1 transition-colors ${buttonClass} outline-none focus:outline-none`}>{status}<ChevronDown className="h-3 w-3 ml-1" /></button>
-            {isOpen && (
-                <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-20 animate-fade-in">
-                    <button onClick={(e) => handleStatusChange(id, 'pending', e)} className="w-full text-left px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center justify-between">Pending {status === 'pending' && <Check className="h-3 w-3" />}</button>
-                    <button onClick={(e) => handleStatusChange(id, 'processed', e)} className="w-full text-left px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 flex items-center justify-between">Processed {status === 'processed' && <Check className="h-3 w-3" />}</button>
-                    <button onClick={(e) => handleStatusChange(id, 'flagged', e)} className="w-full text-left px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50 flex items-center justify-between">Flagged {status === 'flagged' && <Check className="h-3 w-3" />}</button>
-                </div>
-            )}
+        <div className="flex items-center justify-center mt-12 mb-8 select-none">
+            <div className="bg-white rounded-full shadow-sm border border-gray-200 p-1 flex items-center gap-2">
+                <button 
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} 
+                    disabled={currentPage === 1} 
+                    className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 transition-all"
+                >
+                    <ChevronLeft className="h-4 w-4" />
+                </button>
+                
+                <span className="text-xs font-semibold text-gray-700 px-3 min-w-[3rem] text-center">
+                    {currentPage} / {totalPages}
+                </span>
+                
+                <button 
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} 
+                    disabled={currentPage === totalPages} 
+                    className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 transition-all"
+                >
+                    <ChevronRight className="h-4 w-4" />
+                </button>
+            </div>
         </div>
     );
   };
 
+  // ... (Payload renderers remain unchanged)
+  const PayloadRenderer = ({ data, level = 0 }: { data: any, level?: number }) => {
+      if (typeof data !== 'object' || data === null) return <span className="text-gray-800 break-words font-mono text-sm">{String(data)}</span>;
+      return (
+          <div className="space-y-2">
+              {Object.entries(data).map(([key, value]) => {
+                  const isObject = typeof value === 'object' && value !== null && !Array.isArray(value);
+                  return (
+                      <div key={key} className={`flex flex-col ${level > 0 ? 'ml-4 border-l border-gray-200 pl-4' : ''}`}>
+                          {isObject ? (
+                              <div className="mt-2 mb-1"><span className="text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50 px-2 py-1 rounded-md">{key}</span><div className="mt-2"><PayloadRenderer data={value} level={level + 1} /></div></div>
+                          ) : (
+                              <div className="flex flex-col sm:flex-row gap-2 py-1 group"><div className="sm:w-1/3 pt-2"><label className="text-sm font-medium text-gray-700 break-words font-mono text-xs">{key}</label></div><div className="flex-1"><div className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 break-words font-mono min-h-[38px] shadow-sm group-hover:border-indigo-300 transition-colors">{String(value)}</div></div></div>
+                          )}
+                      </div>
+                  );
+              })}
+          </div>
+      );
+  };
+
+  const MappingPayloadRenderer = ({ data, parentKey = '' }: { data: Record<string, any>, parentKey?: string }) => {
+    if (!data || Object.keys(data).length === 0) return null;
+    return (
+        <div className="space-y-6">{Object.entries(data).map(([key, value]) => {
+                const fullKey = parentKey ? `${parentKey}.${key}` : key;
+                const isObject = typeof value === 'object' && value !== null && !Array.isArray(value);
+                if (isObject) return (<div key={key} className="pt-2"><div className="mb-3 flex items-center"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-700 border border-gray-200 shadow-sm">{key}</span><div className="h-px bg-gray-100 flex-1 ml-3"></div></div><div className="ml-2 pl-4 border-l-2 border-gray-100 space-y-4"><MappingPayloadRenderer data={value} parentKey={fullKey} /></div></div>);
+                return (<div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 group transition-all rounded-lg p-2 -mx-2 hover:bg-gray-50 border border-transparent"><div className="sm:w-1/3 flex-shrink-0 min-w-0"><label className="text-sm font-medium text-gray-600 group-hover:text-gray-900 transition-colors break-words">{key}</label></div><div className="flex-1 w-full min-w-0"><div className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 font-mono shadow-sm transition-colors group-hover:border-gray-300 break-all">{String(value)}</div></div></div>);
+            })}</div>
+    );
+  };
+  
+  // ... (Other handlers unchanged)
+  const handleFormStatusToggle = async () => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newStatus = form.status === 'active' ? 'draft' : 'active'; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: newStatus } : f)); try { await supabase.from('forms').update({ status: newStatus }).eq('id', currentFormId); setToast({ message: `Form ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, type: 'success' }); } catch (err) { setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: form.status } : f)); setToast({ message: "Failed to update status", type: "error" }); } };
+  const handleRegenerateWebhookKey = async () => { if (!currentFormId) return; if (!window.confirm("Regenerating the key will break existing integrations. Continue?")) return; const newKey = crypto.randomUUID(); try { await supabase.from('forms').update({ webhook_key: newKey }).eq('id', currentFormId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, webhookKey: newKey, webhookUrl: `${BASE_WEBHOOK_URL}?key=${newKey}` } : f)); setToast({ message: "Webhook Key Regenerated", type: "success" }); } catch (err) { setToast({ message: "Failed to regenerate key", type: "error" }); } };
+  const addFieldToForm = async (type: FieldType) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newField: FormField = { id: crypto.randomUUID(), name: `New ${type} field`, type, mappedKey: undefined }; const updatedFields = [...form.fields, newField]; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to save field", type: "error" }); } };
+  const updateFieldName = async (fieldId: string, newName: string) => { if (!currentFormId) return; setForms(prev => prev.map(f => { if (f.id !== currentFormId) return f; return { ...f, fields: f.fields.map(field => field.id === fieldId ? { ...field, name: newName } : field) }; })); const form = forms.find(f => f.id === currentFormId); if (form) { const updatedFields = form.fields.map(field => field.id === fieldId ? { ...field, name: newName } : field); await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } };
+  const removeField = async (fieldId: string) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const updatedFields = form.fields.filter(f => f.id !== fieldId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to remove field", type: "error" }); } };
+  const handleExplicitSaveMapping = async () => { if (!currentFormId) return; setIsProcessingAction(true); const form = forms.find(f => f.id === currentFormId); if (!form) return; try { await supabase.from('forms').update({ fields: form.fields }).eq('id', currentFormId); setToast({ message: "Mapping configuration saved", type: "success" }); } catch (err) { setToast({ message: "Failed to save mapping", type: "error" }); } finally { setIsProcessingAction(false); } };
+  const handleReferenceSubmissionChange = (submissionId: string) => { setMappingReferenceId(submissionId); const sub = activeFormSubmissions.find(s => s.id === submissionId); if (sub) setLatestPayload(sub.payload); setIsSubmissionDropdownOpen(false); };
+  const handleUpdateStatus = async (submissionId: string, status: 'pending' | 'processed' | 'flagged') => { setActiveFormSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, status } : s)); if (viewingSubmission?.id === submissionId) setViewingSubmission(prev => prev ? { ...prev, status } : null); setIsStatusDropdownOpen(false); try { await supabase.from('form_submissions').update({ status }).eq('id', submissionId); setToast({ message: `Marked as ${status}`, type: "success" }); } catch (err) { setToast({ message: "Update failed", type: "error" }); } };
+  const handleDeleteSubmission = async () => { if (!viewingSubmission) return; setIsProcessingAction(true); try { await supabase.from('form_submissions').delete().eq('id', viewingSubmission.id); setActiveFormSubmissions(prev => prev.filter(s => s.id !== viewingSubmission.id)); setViewingSubmission(null); setIsDeleteRecordModalOpen(false); setToast({ message: "Submission deleted", type: "success" }); } catch (err) { setToast({ message: "Delete failed", type: "error" }); } finally { setIsProcessingAction(false); } };
+  const handleSelectMappingKey = (key: string) => { if (!currentFormId || !activeMappingFieldId) return; setForms(prev => prev.map(f => { if (f.id !== currentFormId) return f; return { ...f, fields: f.fields.map(field => field.id === activeMappingFieldId ? { ...field, mappedKey: key } : field) }; })); setIsMappingModalOpen(false); setActiveMappingFieldId(null); };
+
+  const renderMappingPicker = () => {
+      if (!latestPayload) return <div className="p-4 text-gray-500 text-sm">No reference data available.</div>;
+      const flat = flattenPayload(latestPayload);
+      const keys = Object.keys(flat).filter(k => k.toLowerCase().includes(mappingSearchQuery.toLowerCase()));
+      if (keys.length === 0) return <div className="p-4 text-gray-500 text-sm">No matching keys found.</div>;
+      return (
+          <div className="space-y-1">
+              {keys.map(key => (
+                  <button key={key} onClick={() => handleSelectMappingKey(key)} className="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-50 text-sm font-mono text-gray-700 hover:text-indigo-700 flex justify-between items-center group">
+                      <span>{key}</span>
+                      <span className="text-gray-400 text-xs truncate max-w-[150px] group-hover:text-indigo-400">{String(flat[key])}</span>
+                  </button>
+              ))}
+          </div>
+      );
+  };
+
+  // --- RESTRICTED ACCESS VIEW ---
+  if (!hasVaultAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+        <div className="bg-gray-100 p-6 rounded-full mb-6">
+          <Ban className="h-16 w-16 text-gray-400" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Restricted Access</h1>
+        <p className="text-gray-500 max-w-md mx-auto mb-8">
+          Your operative clearance level does not grant access to the secured vault. Contact a Master Administrator if you require elevated privileges.
+        </p>
+        <Button onClick={() => navigate('/chat')}>Proceed to Comms</Button>
+      </div>
+    );
+  }
+
+  // --- RENDER ---
   return (
-    <div className="space-y-6 pb-24"> 
+    <div className="space-y-6 pb-24 relative min-h-screen"> 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
-        <div className="flex-shrink-0">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <CipherText text="ODL Vault" />
-          </h1>
-          <p className="mt-1 text-gray-500">Secured Operation Data Layer for authorized personnel.</p>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center relative z-50">
-            {activeMainTab === 'credentials' && (
-                <div className="relative min-w-[180px] hidden md:block animate-fade-in" ref={crmFilterRef}>
-                    <button onClick={() => setIsCrmDropdownOpen(!isCrmDropdownOpen)} className={`w-full flex items-center justify-between px-4 py-2.5 bg-white border rounded-xl text-sm font-medium transition-all shadow-sm ${selectedCrmFilter ? 'border-indigo-300 ring-2 ring-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-700 hover:border-indigo-300'}`}><span className="truncate mr-2">{selectedCrmFilter || "All CRMs"}</span><ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isCrmDropdownOpen ? 'rotate-180' : ''}`} /></button>
-                    {isCrmDropdownOpen && (
-                        <div className="absolute top-full mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto overflow-x-hidden animate-fade-in">
-                            <button onClick={() => { setSelectedCrmFilter(null); setIsCrmDropdownOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-between ${!selectedCrmFilter ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700'}`}>All CRMs{!selectedCrmFilter && <Check className="h-3.5 w-3.5" />}</button>
-                            {uniqueCrms.map((crm) => (<button key={crm} onClick={() => { setSelectedCrmFilter(crm); setIsCrmDropdownOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-between ${selectedCrmFilter?.toLowerCase() === crm.toLowerCase() ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700'}`}><span className="truncate">{crm}</span>{selectedCrmFilter?.toLowerCase() === crm.toLowerCase() && <Check className="h-3.5 w-3.5" />}</button>))}
-                        </div>
-                    )}
-                </div>
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4 sticky top-0 bg-gray-50 z-30 py-4 -mt-4 px-1">
+        <div><h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2"><CipherText text="ODL Vault" /></h1><p className="mt-1 text-gray-500">Secured Operation Data Layer</p></div>
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+            {!currentFormId && (
+                <div className="relative group w-full md:w-64 lg:w-80 shadow-sm rounded-xl"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-gray-400" /></div><input type="text" className="block w-full pl-10 pr-3 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder={activeMainTab === 'credentials' ? "Search secure records..." : "Search forms..."} value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} /></div>
             )}
-
-            <div className="relative group w-full md:w-64 lg:w-80">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-gray-400" /></div>
-                <input type="text" className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 sm:text-sm transition-all shadow-sm" placeholder={activeMainTab === 'credentials' ? (currentFolderId ? "Search current folder..." : "Search credentials...") : "Search submissions..."} value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} />
-            </div>
            <div className="flex-shrink-0 flex space-x-2">
-               {activeMainTab === 'credentials' && (
+               {canMutate && (
                  <>
-                   {user?.role === 'grand_admin' && (<Button onClick={() => setIsSqlModalOpen(true)} variant="secondary" className="px-3" title="Database Setup"><Terminal className="h-5 w-5 text-gray-500" /></Button>)}
-                   <Button onClick={() => setIsCreateFolderModalOpen(true)} variant="secondary" className="w-full sm:w-auto px-4"><FolderPlus className="h-5 w-5" /></Button>
-                   <Button onClick={openAddModal} className="w-full sm:w-auto"><Plus className="h-5 w-5 mr-2" />Add Credential</Button>
+                   <Button onClick={() => setIsCreateFolderModalOpen(true)} variant="secondary" className="bg-white border-gray-200 text-gray-600 hover:bg-gray-50 px-3 shadow-sm"><FolderPlus className="h-5 w-5" /></Button>
+                   {activeMainTab === 'credentials' ? <Button onClick={() => { setEditingId(null); setIsAddModalOpen(true); }} className="w-full sm:w-auto shadow-sm shadow-indigo-200"><Plus className="h-5 w-5 mr-2" />Add Credential</Button> : !currentFormId && <Button onClick={() => setIsCreateFormModalOpen(true)} className="w-full sm:w-auto shadow-sm shadow-indigo-200"><Plus className="h-5 w-5 mr-2" />New Form</Button>}
                  </>
                )}
            </div>
         </div>
       </div>
+      
+      {/* TABS */}
+      <div className="border-b border-gray-200 flex items-center justify-between pr-4"><nav className="-mb-px flex space-x-8"><button onClick={() => { setActiveMainTab('credentials'); setCurrentFormId(null); }} className={`${activeMainTab === 'credentials' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all outline-none focus:outline-none`}><Lock className={`-ml-0.5 mr-2 h-5 w-5 ${activeMainTab === 'credentials' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'}`} /><span>Credentials Vault</span></button><button onClick={() => { setActiveMainTab('submissions'); }} className={`${activeMainTab === 'submissions' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all outline-none focus:outline-none`}><FileText className={`-ml-0.5 mr-2 h-5 w-5 ${activeMainTab === 'submissions' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'}`} /><span>Form Manager</span></button></nav></div>
 
-      <div className="border-b border-gray-200 flex items-center justify-between pr-4">
-        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-          <button onClick={() => { setActiveMainTab('credentials'); setSearchQuery(''); setCurrentPage(1); setExpandedSubmissionId(null); setSelectedCrmFilter(null); clearSelection(); }} className={`${activeMainTab === 'credentials' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all outline-none focus:outline-none focus:ring-0 focus-visible:outline-none`}>
-            <Lock className={`-ml-0.5 mr-2 h-5 w-5 ${activeMainTab === 'credentials' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-            <span>Credentials Vault</span>
-            <span className={`ml-3 py-0.5 px-2.5 rounded-full text-xs font-medium inline-block ${activeMainTab === 'credentials' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>{credentials.length}</span>
-          </button>
-          <button onClick={() => { setActiveMainTab('submissions'); setSearchQuery(''); setCurrentPage(1); setExpandedSubmissionId(null); setSelectedCrmFilter(null); clearSelection(); }} className={`${activeMainTab === 'submissions' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all outline-none focus:outline-none focus:ring-0 focus-visible:outline-none`}>
-            <Inbox className={`-ml-0.5 mr-2 h-5 w-5 ${activeMainTab === 'submissions' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'}`} />
-            <span>Form Intelligence</span>
-             <span className={`ml-3 py-0.5 px-2.5 rounded-full text-xs font-medium inline-block ${activeMainTab === 'submissions' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>{totalSubmissionsCount}</span>
-          </button>
-        </nav>
-        <div><PaginationControls variant="minimal" /></div>
-      </div>
-
-      {activeMainTab === 'credentials' && (
-        <section key="credentials-section" className="animate-fade-in relative">
-          {isLoadingCredentials ? (
-             <div className="flex flex-col items-center justify-center h-64 mt-8"><Loader2 className="h-10 w-10 text-indigo-500 animate-spin mb-4" /><p className="text-gray-500 font-medium">Decrypting Vault...</p></div>
-          ) : (
-            <div className="mt-6">
-                {!searchQuery && (
-                  <div className="flex items-center mb-6 text-sm text-gray-500">
-                      <button onClick={() => { setCurrentFolderId(null); setCurrentPage(1); clearSelection(); }} className={`flex items-center hover:text-indigo-600 transition-colors ${!currentFolderId ? 'font-bold text-gray-800' : ''}`}><Home className="h-4 w-4 mr-1" />Vault Root</button>
-                      {breadcrumbPath.map((folder, index) => (<div key={folder.id} className="flex items-center"><ChevronRight className="h-4 w-4 mx-1 text-gray-300" /><button onClick={() => { setCurrentFolderId(folder.id); setCurrentPage(1); clearSelection(); }} className={`hover:text-indigo-600 transition-colors ${index === breadcrumbPath.length - 1 ? 'font-bold text-gray-800' : ''}`}>{folder.name}</button></div>))}
-                  </div>
+      {/* MAIN CONTENT AREA */}
+      <section className="relative mt-6 h-full min-h-[400px]">
+          {isLoadingData ? (<div className="flex flex-col items-center justify-center h-64 mt-8"><Loader2 className="h-10 w-10 text-indigo-500 animate-spin mb-4" /><p className="text-gray-500 font-medium">Decrypting Vault...</p></div>) : (
+            <>
+                {/* BREADCRUMBS */}
+                {!currentFormId && !searchQuery && (
+                    <div className="flex items-center mb-6 text-sm text-gray-500 animate-fade-in">
+                        <button onClick={() => setCurrentFolderId(null)} className={`flex items-center hover:text-indigo-600 transition-colors ${!currentFolderId ? 'font-bold text-gray-800' : ''}`}><Home className="h-4 w-4 mr-1" />{activeMainTab === 'credentials' ? 'Vault Root' : 'Forms Root'}</button>
+                        {breadcrumbPath.map((folder, index) => (<div key={folder.id} className="flex items-center"><ChevronRight className="h-4 w-4 mx-1 text-gray-300" /><button onClick={() => setCurrentFolderId(folder.id)} className={`hover:text-indigo-600 transition-colors ${index === breadcrumbPath.length - 1 ? 'font-bold text-gray-800' : ''}`}>{folder.name}</button></div>))}
+                    </div>
                 )}
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {displayFolders.map(folder => {
-                      const isSelected = selectedItems.has(folder.id);
-                      return (
-                          <div key={folder.id} onClick={() => { setCurrentFolderId(folder.id); setCurrentPage(1); clearSelection(); }} className={`group bg-white rounded-xl border transition-all cursor-pointer flex flex-col justify-between h-[180px] relative overflow-hidden ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:shadow-md hover:border-indigo-300'}`}>
-                             <div className="absolute top-3 left-3 z-20"><button onClick={(e) => toggleSelection(folder.id, e)} className={`p-1 rounded transition-colors ${isSelected ? 'text-indigo-600 bg-indigo-50' : 'text-gray-300 hover:text-gray-500'}`}>{isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}</button></div>
-                             <div className="absolute bottom-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={(e) => openDeleteModal(folder.id, 'folder', e)} className="p-1.5 text-gray-400 hover:text-rose-500 bg-white hover:bg-rose-50 rounded-full transition-colors border border-gray-100 hover:border-rose-200 shadow-sm" title="Delete Folder"><Trash2 className="h-4 w-4" /></button></div>
-                             <div className="flex items-start justify-between p-5 pb-0"><div className="ml-auto"></div><Folder className={`h-10 w-10 transition-colors ${isSelected ? 'text-indigo-500' : 'text-indigo-200 group-hover:text-indigo-500'}`} /></div>
-                             <div className="p-5"><h3 className={`font-bold truncate text-lg transition-colors ${isSelected ? 'text-indigo-700' : 'text-gray-900 group-hover:text-indigo-600'}`}>{folder.name}</h3><p className="text-xs text-gray-400 mt-1">{folders.filter(f => f.parentId === folder.id).length} folders, {credentials.filter(c => c.folderId === folder.id).length} items</p></div>
-                          </div>
-                      );
-                  })}
-                  {displayCredentials.map((cred) => {
-                    const crmStyle = getCrmStyle(cred.serviceName);
-                    const isSelected = selectedItems.has(cred.id);
-                    return (
-                      <div key={cred.id} className={`group relative bg-white rounded-xl border transition-all flex flex-col h-full animate-fade-in min-h-[220px] ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-sm' : 'border-gray-200 hover:shadow-md hover:border-indigo-200'}`}>
-                        <div className="absolute top-3 left-3 z-20"><button onClick={(e) => toggleSelection(cred.id, e)} className={`p-1 rounded transition-colors ${isSelected ? 'text-indigo-600 bg-indigo-50' : 'text-gray-300 hover:text-gray-500'}`}>{isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}</button></div>
-                        <div className="p-5 flex flex-col h-full">
-                            <div className="flex justify-between items-start mb-4 pl-6">
-                              <div className="flex items-center space-x-3 max-w-[70%]">
-                                <div className="h-10 w-10 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-indigo-50 transition-colors border border-gray-100 flex-shrink-0"><Building className="h-5 w-5 text-indigo-500" /></div>
-                                <div className="min-w-0">
-                                  <h3 className="font-bold text-gray-900 truncate text-sm" title={cred.clientName}>{cred.clientName}</h3>
-                                  <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity -ml-1 mt-1">
-                                     <button onClick={() => openEditModal(cred)} className="p-1 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors outline-none focus:outline-none" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
-                                     <button onClick={(e) => handleDuplicateCredential(cred, e)} className="p-1 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors outline-none focus:outline-none" title="Duplicate"><Copy className="h-3.5 w-3.5" /></button>
-                                     <button onClick={(e) => openMoveModal(cred.id, cred.folderId, e)} className="p-1 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors outline-none focus:outline-none" title="Move to Folder"><Move className="h-3.5 w-3.5" /></button>
-                                     <button onClick={(e) => openDeleteModal(cred.id, 'credential', e)} className="p-1 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors outline-none focus:outline-none" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
-                                  </div>
-                                </div>
-                              </div>
-                              <button onClick={() => setSelectedCrmFilter(prev => prev && prev.toLowerCase() === cred.serviceName.toLowerCase() ? null : cred.serviceName)} className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${crmStyle.bg} ${crmStyle.text} ${crmStyle.border} ${crmStyle.hover}`} title="Filter by this CRM">{cred.serviceName}</button>
+
+                {/* VIEW SWITCHER */}
+                {activeMainTab === 'submissions' && currentFormId ? (
+                    // --- SINGLE FORM DETAIL VIEW ---
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-180px)] animate-fade-in-up">
+                        {/* (... existing Form Detail content kept as is for brevity ...) */}
+                        <div className="border-b border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between bg-gray-50/50 gap-4 flex-shrink-0">
+                            <div className="flex items-center gap-4 w-full md:w-auto">
+                                <button onClick={() => setCurrentFormId(null)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-gray-500 transition-all border border-transparent hover:border-gray-200 flex-shrink-0"><ChevronLeft className="h-5 w-5" /></button>
+                                <div className="min-w-0"><h2 className="text-xl font-bold text-gray-900 truncate">{activeForm?.name}</h2><div className="flex items-center gap-2 mt-1"><div className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" style={{ backgroundColor: activeForm?.status === 'active' ? '#10b981' : '#e5e7eb' }} onClick={handleFormStatusToggle}><span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${activeForm?.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} /></div><span className={`text-[10px] font-bold uppercase tracking-wider ${activeForm?.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`}>{activeForm?.status === 'active' ? 'Active' : 'Draft'}</span><div className="h-4 w-px bg-gray-300 mx-1"></div><span className="text-xs text-gray-400 font-mono flex items-center gap-1 truncate max-w-[150px] sm:max-w-[300px]"><LinkIcon className="h-3 w-3 flex-shrink-0" />{activeForm?.webhookUrl}</span><button onClick={() => copyToClipboard(activeForm?.webhookUrl || '')} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400" title="Copy Webhook URL"><Copy className="h-3.5 w-3.5" /></button><button onClick={handleRegenerateWebhookKey} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400 ml-1" title="Regenerate Key"><RefreshCcw className="h-3.5 w-3.5" /></button></div></div>
                             </div>
-                            <div className="space-y-3 flex-1 mt-2">
-                              {cred.crmLink && (
-                                <div><label className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold block mb-1">CRM Link</label><div className="flex items-center justify-between"><a href={cred.crmLink} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline truncate mr-2"><LinkIcon className="h-3 w-3 mr-1.5 flex-shrink-0" /><span className="truncate">{cred.crmLink}</span></a><button onClick={() => handleCopy(cred.crmLink)} className="text-gray-400 hover:text-indigo-600 focus:outline-none outline-none p-1 rounded hover:bg-gray-100 transition-colors" title="Copy Link"><Copy className="h-3 w-3" /></button></div></div>
-                              )}
-                              <div><label className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold block mb-1">Login Email</label><div className="flex items-center justify-between text-xs font-medium text-gray-700 bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100"><span className="truncate mr-2">{cred.username}</span><button onClick={() => handleCopy(cred.username)} className="text-gray-400 hover:text-indigo-600 focus:outline-none outline-none flex-shrink-0 p-1 rounded hover:bg-gray-200 transition-colors" title="Copy Email"><Copy className="h-3 w-3" /></button></div></div>
-                              <div><label className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold block mb-1">Password</label><div className="flex items-center justify-between text-xs font-medium text-gray-700 bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100 font-mono"><span className="truncate mr-2">{visiblePasswords[cred.id] ? <CipherText text={cred.password} speed={10} revealDelay={0} /> : '••••••••••••'}</span><div className="flex items-center space-x-1 flex-shrink-0"><button onClick={() => handleCopy(cred.password)} className="text-gray-400 hover:text-indigo-600 focus:outline-none outline-none p-1 rounded hover:bg-gray-200 transition-colors" title="Copy Password"><Copy className="h-3 w-3" /></button><button onClick={() => togglePassword(cred.id)} className="text-gray-400 hover:text-indigo-600 focus:outline-none outline-none p-1 rounded hover:bg-gray-200 transition-colors" title={visiblePasswords[cred.id] ? "Hide Password" : "Show Password"}>{visiblePasswords[cred.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}</button></div></div></div>
-                            </div>
-                            <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between text-[10px] text-gray-400"><span>Updated: {new Date(cred.lastUpdated).toLocaleDateString()}</span><Shield className="h-3 w-3 text-emerald-500" /></div>
+                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0"><div className="flex bg-gray-200/50 p-1 rounded-lg"><button onClick={() => setFormViewMode('overview')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Submissions</button><button onClick={() => setFormViewMode('builder')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'builder' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Form Builder</button><button onClick={() => setFormViewMode('mapping')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'mapping' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Map Fields</button></div></div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  {(currentPage === totalPages || totalItems === 0) && !searchQuery && !selectedCrmFilter && (
-                    <button onClick={openAddModal} className="flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/10 transition-all text-gray-400 hover:text-indigo-500 h-full min-h-[220px] outline-none focus:outline-none group"><div className="p-3 rounded-full bg-gray-50 mb-3 group-hover:bg-white group-hover:scale-110 transition-transform"><Plus className="h-6 w-6" /></div><span className="font-medium">Add New Key</span></button>
-                  )}
-                </div>
-            </div>
+                        <div className="flex-1 bg-gray-50/30 overflow-hidden flex flex-col relative h-full">
+                            {/* ... Content bodies (builder, mapping, overview) ... */}
+                            {formViewMode === 'builder' && (
+                                <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
+                                    <div className="flex-1 lg:w-2/3 flex flex-col min-h-0 overflow-y-auto p-6 md:p-8 space-y-4">
+                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Form Structure</h3>
+                                        {activeForm?.fields.length === 0 && <div className="text-center p-8 border-2 border-dashed border-gray-200 rounded-xl text-gray-400"><LayoutTemplate className="h-10 w-10 mx-auto mb-2 opacity-20" /><p>No fields defined yet.</p></div>}
+                                        {activeForm?.fields.map((field) => (
+                                            <div key={field.id} className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3 group transition-colors">
+                                                <div className="p-2 bg-gray-50 rounded-lg text-gray-500">{field.type === 'text' && <Type className="h-4 w-4" />}{field.type === 'textarea' && <AlignLeft className="h-4 w-4" />}{field.type === 'email' && <Mail className="h-4 w-4" />}{field.type === 'phone' && <Phone className="h-4 w-4" />}</div>
+                                                <input value={field.name} onChange={(e) => updateFieldName(field.id, e.target.value)} className="flex-1 bg-transparent rounded-lg px-2 py-1 outline-none font-medium text-gray-900 placeholder-gray-400 transition-colors hover:bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-100" placeholder="Field Name" />
+                                                <button onClick={() => removeField(field.id)} className="text-gray-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="w-full lg:w-1/3 bg-white border-l border-gray-200 p-6 overflow-y-auto">
+                                        <div className="sticky top-0"><h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center"><Plus className="w-3 h-3 mr-1"/> Add Field</h3><div className="grid grid-cols-2 gap-3"><button onClick={() => addFieldToForm('text')} className="flex flex-col items-center justify-center p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-all text-gray-600 group"><Type className="h-6 w-6 mb-2 opacity-70 group-hover:scale-110 transition-transform" /><span className="text-xs font-medium">Text</span></button><button onClick={() => addFieldToForm('textarea')} className="flex flex-col items-center justify-center p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-all text-gray-600 group"><AlignLeft className="h-6 w-6 mb-2 opacity-70 group-hover:scale-110 transition-transform" /><span className="text-xs font-medium">Large Text</span></button><button onClick={() => addFieldToForm('email')} className="flex flex-col items-center justify-center p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-all text-gray-600 group"><Mail className="h-6 w-6 mb-2 opacity-70 group-hover:scale-110 transition-transform" /><span className="text-xs font-medium">Email</span></button><button onClick={() => addFieldToForm('phone')} className="flex flex-col items-center justify-center p-4 bg-gray-50 border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-all text-gray-600 group"><Phone className="h-6 w-6 mb-2 opacity-70 group-hover:scale-110 transition-transform" /><span className="text-xs font-medium">Phone</span></button></div></div>
+                                    </div>
+                                </div>
+                            )}
+                            {formViewMode === 'mapping' && (
+                                <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
+                                    <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 overflow-hidden bg-gray-50/50 border-r border-gray-200 order-2 lg:order-1">
+                                        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white"><h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Field Mapping</h3><Button onClick={handleExplicitSaveMapping} className="h-8 text-xs" isLoading={isProcessingAction}><Save className="h-3 w-3 mr-2" />Save Configuration</Button></div>
+                                        <div className="overflow-y-auto p-6 space-y-3 flex-1">
+                                            {activeForm?.fields.map(field => {
+                                                return (
+                                                    <div key={field.id} className={`flex flex-col sm:flex-row sm:items-center justify-between bg-white p-4 rounded-xl border shadow-sm gap-4 transition-all border-gray-200 hover:border-indigo-300`}>
+                                                        <div className="flex items-center gap-3"><div className={`p-2 rounded-lg bg-indigo-50 text-indigo-600`}>{field.type === 'email' ? <Mail size={16} /> : <Type size={16} />}</div><span className={`font-medium text-sm text-gray-900`}>{field.name}</span></div>
+                                                        <div className="hidden sm:block"><ArrowRightLeft className={`h-4 w-4 text-gray-300`} /></div>
+                                                        <div className="w-full sm:w-1/2"><button onClick={() => { setActiveMappingFieldId(field.id); setIsMappingModalOpen(true); setMappingSearchQuery(''); }} className={`w-full text-left bg-gray-50 border hover:bg-white transition-all rounded-lg px-3 py-2.5 text-sm flex items-center justify-between group border-gray-200 hover:border-indigo-300`}>{field.mappedKey ? <span className="font-mono text-indigo-600 font-medium truncate">{field.mappedKey}</span> : <span className="text-gray-400 italic">Select data point...</span>}<ChevronDown size={14} className="text-gray-400 group-hover:text-indigo-500 flex-shrink-0 ml-2" /></button></div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {activeForm?.fields.length === 0 && <div className="text-center p-12 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><Settings className="h-8 w-8 mx-auto mb-2 opacity-20" /><p className="text-xs">No fields to map. Go to <b>Form Builder</b> to add fields.</p></div>}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 bg-white order-1 lg:order-2">
+                                        <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                                            <div><h3 className="text-sm font-bold text-gray-800">Inbound Data</h3><p className="text-[10px] text-gray-500 mt-0.5">Reference Payload</p></div>
+                                            <div className="flex items-center gap-2 relative" ref={submissionDropdownRef}>
+                                                <button onClick={() => currentFormId && fetchFormSubmissions(currentFormId)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all border border-transparent hover:border-gray-200" title="Refresh Data"><RefreshCw className={`h-3.5 w-3.5 ${isLoadingSubmissions ? 'animate-spin' : ''}`} /></button>
+                                                <div className="relative">
+                                                    <button onClick={() => setIsSubmissionDropdownOpen(!isSubmissionDropdownOpen)} className="flex items-center justify-between max-w-[140px] px-2 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-[10px] text-gray-700 hover:border-indigo-300 focus:ring-2 focus:ring-indigo-100 transition-all"><span className="truncate">{activeFormSubmissions.find(s => s.id === mappingReferenceId) ? `${new Date(activeFormSubmissions.find(s => s.id === mappingReferenceId)!.timestamp).toLocaleTimeString()}...` : "Select..."}</span><ChevronDown className={`ml-1 h-3 w-3 text-gray-400 transition-transform ${isSubmissionDropdownOpen ? 'rotate-180' : ''}`} /></button>
+                                                    <AnimatePresence>{isSubmissionDropdownOpen && (<motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">{activeFormSubmissions.length > 0 ? (<div className="py-1">{activeFormSubmissions.slice(0, 20).map((sub) => (<button key={sub.id} onClick={() => handleReferenceSubmissionChange(sub.id)} className={`w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 flex items-center justify-between group border-b border-gray-50 last:border-0 ${mappingReferenceId === sub.id ? 'bg-indigo-50/50 text-indigo-700' : 'text-gray-600'}`}><span className="font-medium truncate">{new Date(sub.timestamp).toLocaleString()}</span><span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded ml-2 font-mono">{sub.id.slice(0, 4)}</span></button>))}</div>) : (<div className="px-4 py-8 text-center text-gray-400 text-xs">No submissions found</div>)}</motion.div>)}</AnimatePresence>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-y-auto flex-1 p-6 bg-white">{latestPayload ? (<MappingPayloadRenderer data={latestPayload} />) : (<div className="h-full flex flex-col items-center justify-center text-center text-gray-400 p-8"><Database className="h-8 w-8 mb-2 opacity-20" /><p className="text-xs italic">Waiting for data...</p></div>)}</div>
+                                    </div>
+                                </div>
+                            )}
+                            {formViewMode === 'overview' && (
+                                <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+                                    <div className="w-full lg:w-[400px] border-r border-gray-200 bg-white flex-shrink-0 flex flex-col">
+                                        <div className="p-4 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 backdrop-blur-sm"><h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Submitted Data</h3></div>
+                                        <div className="flex-1 overflow-y-auto">
+                                            {isLoadingSubmissions ? (<div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-500 mb-2" /><p className="text-xs text-gray-400">Loading requests...</p></div>) : activeFormSubmissions.length > 0 ? (<div className="divide-y divide-gray-100">{activeFormSubmissions.map(sub => {
+                                                        const isActive = viewingSubmission?.id === sub.id;
+                                                        // ... Title Generation ...
+                                                        let displayTitle = 'Unprocessed';
+                                                        if (sub.mapped_data && Object.keys(sub.mapped_data).length > 0) {
+                                                            const nameKey = Object.keys(sub.mapped_data).find(k => k.toLowerCase().includes('name'));
+                                                            displayTitle = nameKey ? String(sub.mapped_data[nameKey]) : String(Object.values(sub.mapped_data)[0]);
+                                                        } else if (activeForm && activeForm.fields.length > 0) {
+                                                            const nameField = activeForm.fields.find(f => f.name.toLowerCase().includes('name'));
+                                                            if (nameField && nameField.mappedKey) { const val = getNestedValue(sub.payload, nameField.mappedKey); if (val) displayTitle = String(val); }
+                                                            if (displayTitle === 'Unprocessed') { const firstMapped = activeForm.fields.find(f => f.mappedKey); if (firstMapped) { const val = getNestedValue(sub.payload, firstMapped.mappedKey); if (val) displayTitle = String(val); } }
+                                                            if (displayTitle === 'Unprocessed' && sub.payload) { const flattened = flattenPayload(sub.payload); const nameKey = Object.keys(flattened).find(k => ['name', 'full_name', 'firstname', 'client', 'customer', 'user', 'email'].some(term => k.toLowerCase().includes(term))); if (nameKey) displayTitle = String(flattened[nameKey]); }
+                                                        }
+                                                        if (displayTitle === 'Unprocessed') displayTitle = `Submission ${sub.id.slice(0,6)}`;
+                                                        const hasMappedData = displayTitle !== `Submission ${sub.id.slice(0,6)}` && displayTitle !== 'Unprocessed';
+
+                                                        return (
+                                                            <div key={sub.id} onClick={() => setViewingSubmission(sub)} className={`p-4 cursor-pointer transition-all hover:bg-gray-50 ${isActive ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : 'border-l-4 border-l-transparent'}`}>
+                                                                <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-2"><span className={`text-xs font-semibold truncate max-w-[180px] ${isActive ? 'text-indigo-900' : (hasMappedData ? 'text-gray-900' : 'text-indigo-600')}`}>{displayTitle}</span></div><span className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wide ${sub.status === 'processed' ? 'bg-emerald-100 text-emerald-700' : sub.status === 'flagged' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{sub.status}</span></div>
+                                                                <div className="text-[10px] text-gray-400 truncate">{new Date(sub.timestamp).toLocaleDateString()} {new Date(sub.timestamp).toLocaleTimeString()} • {sub.source}</div>
+                                                            </div>
+                                                        );
+                                                    })}</div>) : (<div className="p-8 text-center text-gray-400"><FileText className="w-8 h-8 mx-auto mb-2 opacity-20" /><p className="text-xs">No requests logged.</p></div>)}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 bg-gray-50/30 overflow-y-auto p-6 md:p-8">
+                                        {/* ... Detail Right Panel ... */}
+                                        {viewingSubmission ? (
+                                            <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                                <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                                    <div><h3 className="text-lg font-bold text-gray-900 mb-1">Submission Details</h3><div className="flex gap-4 text-xs text-gray-500"><span>ID: {viewingSubmission.id}</span><span>{new Date(viewingSubmission.timestamp).toLocaleString()}</span></div></div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="relative" ref={statusDropdownRef}>
+                                                            <button onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${viewingSubmission.status === 'processed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100' : viewingSubmission.status === 'flagged' ? 'bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100' : 'bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100'}`}>{viewingSubmission.status}<ChevronDown size={14} /></button>
+                                                            <AnimatePresence>{isStatusDropdownOpen && (<motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} className="absolute top-full right-0 mt-2 w-32 bg-white border border-gray-100 rounded-xl shadow-xl z-50 overflow-hidden"><div className="py-1"><button onClick={() => handleUpdateStatus(viewingSubmission.id, 'pending')} className="w-full text-left px-4 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50">Pending</button><button onClick={() => handleUpdateStatus(viewingSubmission.id, 'processed')} className="w-full text-left px-4 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">Processed</button><button onClick={() => handleUpdateStatus(viewingSubmission.id, 'flagged')} className="w-full text-left px-4 py-2 text-xs font-medium text-rose-700 hover:bg-rose-50">Flagged</button></div></motion.div>)}</AnimatePresence>
+                                                        </div>
+                                                        <div className="h-6 w-px bg-gray-200 mx-2"></div>
+                                                        <button onClick={() => setShowRawPayload(!showRawPayload)} className={`p-2 rounded-lg transition-colors border ${showRawPayload ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'text-gray-400 border-transparent hover:bg-gray-100'}`} title="Toggle Raw JSON">{showRawPayload ? <TableIcon size={18} /> : <FileJson size={18} />}</button>
+                                                    </div>
+                                                </div>
+                                                {!showRawPayload ? (
+                                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                                        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200"><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Processed Data</h4></div>
+                                                        <div className="divide-y divide-gray-100">
+                                                            {Object.keys(computedMappedData).length > 0 ? (
+                                                                Object.entries(computedMappedData).map(([key, value]) => {
+                                                                    const isEmpty = !value || value === 'null' || value === '';
+                                                                    return (
+                                                                        <div key={key} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-2 hover:bg-gray-50 transition-colors">
+                                                                            <div className="sm:w-1/3 flex items-center gap-2"><div className={`p-1.5 rounded-md ${isEmpty ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>{isEmpty ? <AlertCircle size={14} /> : <CheckCheck size={14} />}</div><span className="text-sm font-medium text-gray-700">{key}</span></div>
+                                                                            <div className="flex-1"><div className={`text-sm rounded-lg px-3 py-2 border ${isEmpty ? 'text-rose-600 bg-rose-50 border-rose-200 font-semibold' : 'text-gray-900 bg-gray-50 border-gray-200'}`}>{isEmpty ? 'No Data Found' : String(value)}</div></div>
+                                                                        </div>
+                                                                    );
+                                                                })
+                                                            ) : (<div className="p-8 text-center"><ShieldAlert className="h-8 w-8 mx-auto mb-2 text-gray-300" /><p className="text-sm font-medium text-gray-600">No processed data available.</p><p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">This submission has not been processed against the current map. Go to <b>Map Fields</b> and click <b>Save Configuration</b> to process historical data.</p></div>)}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 overflow-hidden">
+                                                        <div className="mb-4 pb-2 border-b border-gray-100 flex justify-between items-center"><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Raw Payload Data</h4></div>
+                                                        <PayloadRenderer data={viewingSubmission.payload} />
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-6">
+                                                    <Button variant="danger" onClick={() => setIsDeleteRecordModalOpen(true)} className="text-xs">Delete Record</Button>
+                                                    <Button className="text-xs" onClick={() => setFormViewMode('mapping')}><Settings className="w-3.5 h-3.5 mr-2" />Configure Mapping</Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8"><div className="w-16 h-16 bg-gray-200/50 rounded-full flex items-center justify-center mb-4"><LayoutTemplate className="w-8 h-8 text-gray-300" /></div><h3 className="text-lg font-semibold text-gray-500 mb-2">No Data Selected</h3><p className="text-sm max-w-xs text-center">Select a submission from the list on the left to view detailed payload information.</p></div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    // --- GRID VIEW ---
+                    <motion.div 
+                        variants={containerVariants}
+                        initial="hidden"
+                        animate="show"
+                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 pb-20"
+                    >
+                        {/* FOLDERS GRID */}
+                        <AnimatePresence mode='popLayout'>
+                            {displayFolders.map(folder => (
+                                <motion.div 
+                                    variants={itemVariants}
+                                    key={folder.id} 
+                                    onClick={() => setCurrentFolderId(folder.id)} 
+                                    exit="exit"
+                                    className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] ${selectedItems.has(folder.id) ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50/10' : 'border-gray-200 hover:border-indigo-200'}`}
+                                >
+                                    <div className="flex items-start justify-between">
+                                        <div className="ml-auto z-10">
+                                           <div onClick={(e) => toggleSelection(folder.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(folder.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
+                                              <Check size={16} strokeWidth={3} />
+                                           </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 relative">
+                                        <div className="absolute -top-12 -left-2 p-3 bg-indigo-50 rounded-2xl group-hover:scale-110 transition-transform">
+                                            <Folder className={`h-8 w-8 ${selectedItems.has(folder.id) ? 'text-indigo-600' : 'text-indigo-500'}`} />
+                                        </div>
+                                        <div className="mt-6">
+                                            <h3 className="text-xl font-bold text-gray-900 truncate tracking-tight">{folder.name}</h3>
+                                            <p className="text-sm text-gray-500 mt-1 font-medium">{folders.filter(f => f.parentId === folder.id).length} sub-folders</p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ))}
+
+                            {/* ITEMS GRID */}
+                            {displayItems.map(item => {
+                                if (activeMainTab === 'credentials') {
+                                    const cred = item as StoredCredential;
+                                    const style = getCrmStyle(cred.serviceName);
+                                    return (
+                                        <motion.div 
+                                            variants={itemVariants}
+                                            key={cred.id} 
+                                            onClick={() => canMutate && setEditingId(cred.id)}
+                                            exit="exit"
+                                            className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[220px] ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
+                                        >
+                                            <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+                                                <div onClick={(e) => toggleSelection(cred.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(cred.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
+                                                    <Check size={16} strokeWidth={3} />
+                                                </div>
+                                            </div>
+                                            <div className="p-6 flex flex-col h-full">
+                                                <div className="flex items-start justify-between mb-4 pr-10">
+                                                    <div className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.bg} ${style.text} ${style.border}`}>
+                                                        {cred.serviceName || 'Service'}
+                                                    </div>
+                                                </div>
+                                                
+                                                <h3 className="font-bold text-gray-900 truncate text-lg mb-4 flex items-center gap-2 group-hover:text-indigo-600 transition-colors">
+                                                    {cred.clientName}
+                                                    {cred.crmLink && (
+                                                        <a 
+                                                            href={cred.crmLink} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-gray-400 hover:text-indigo-600 transition-colors p-1"
+                                                            title="Open Link"
+                                                        >
+                                                            <ExternalLink size={14} />
+                                                        </a>
+                                                    )}
+                                                </h3>
+                                                
+                                                <div className="space-y-2 flex-1">
+                                                    <div 
+                                                        onClick={(e) => copyToClipboard(cred.username, e)}
+                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100"
+                                                        title="Click to copy"
+                                                    >
+                                                        <UserIcon size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500" />
+                                                        <span className="truncate flex-1 font-medium">{cred.username}</span>
+                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0" />
+                                                    </div>
+                                                    <div 
+                                                        onClick={(e) => copyToClipboard(cred.password, e)}
+                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100"
+                                                        title="Click to copy"
+                                                    >
+                                                        <Lock size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500" />
+                                                        <span className="truncate flex-1 font-mono text-xs">••••••••••••</span>
+                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+                                                    <span>Updated: {new Date(cred.lastUpdated).toLocaleDateString()}</span>
+                                                    {canMutate && (
+                                                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                                                          <button onClick={() => setEditingId(cred.id)} className="hover:text-indigo-600 transition-colors p-1"><Pencil size={14} /></button>
+                                                          <button onClick={() => setDeleteConfirmation({ isOpen: true, id: cred.id, type: 'credential' })} className="hover:text-rose-600 transition-colors p-1"><Trash2 size={14} /></button>
+                                                      </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                } else {
+                                    const form = item as FormDefinition;
+                                    return (
+                                        <motion.div 
+                                            variants={itemVariants}
+                                            key={form.id} 
+                                            onClick={() => setCurrentFormId(form.id)} 
+                                            exit="exit"
+                                            className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] ${selectedItems.has(form.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
+                                        >
+                                             <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+                                                <div onClick={(e) => toggleSelection(form.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(form.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
+                                                    <Check size={16} strokeWidth={3} />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div className={`p-3 rounded-2xl ${selectedItems.has(form.id) ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500 group-hover:bg-indigo-50 group-hover:text-indigo-500'} transition-colors`}>
+                                                        <LayoutTemplate className="h-6 w-6" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <h3 className="text-xl font-bold text-gray-900 truncate">{form.name}</h3>
+                                                </div>
+                                                <div className="flex items-center mt-2">
+                                                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${form.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                                        <span className={`h-1.5 w-1.5 rounded-full ${form.status === 'active' ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
+                                                        {form.status === 'active' ? 'Active' : 'Draft'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
+                                                <p className="text-xs text-gray-400 font-medium">Created {new Date(form.createdAt).toLocaleDateString()}</p>
+                                                {canMutate && (
+                                                    <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ isOpen: true, id: form.id, type: 'form' }); }} className="text-gray-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><Trash2 size={16} /></button>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    );
+                                }
+                            })}
+                        </AnimatePresence>
+
+                        {/* Empty State */}
+                        {displayFolders.length === 0 && displayItems.length === 0 && (
+                            <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50/50">
+                                <div className="bg-white p-4 rounded-full shadow-sm mb-4"><Shield className="h-10 w-10 text-gray-300" /></div>
+                                <h3 className="text-base font-bold text-gray-900">Vault Empty</h3>
+                                <p className="text-sm text-gray-500 mt-1 mb-6 max-w-sm mx-auto">No records found in this sector. Initiate a new record or create a directory.</p>
+                                {canMutate && <Button onClick={() => activeMainTab === 'credentials' ? setIsAddModalOpen(true) : setIsCreateFormModalOpen(true)} variant="secondary" className="text-xs">Create First Record</Button>}
+                            </div>
+                        )}
+                        
+                        <div className="col-span-full">
+                            <PaginationControls />
+                        </div>
+                    </motion.div>
+                )}
+            </>
           )}
-          {createPortal(<AnimatePresence>{selectedItems.size > 0 && (<motion.div initial={{ opacity: 0, y: 30, x: "-50%" }} animate={{ opacity: 1, y: 0, x: "-50%" }} exit={{ opacity: 0, y: 30, x: "-50%" }} transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }} className="fixed bottom-12 left-1/2 md:left-[calc(50%+9rem)] bg-zinc-900/90 backdrop-blur-md text-white shadow-2xl shadow-zinc-900/30 rounded-full px-6 py-3 flex items-center gap-6 z-[100] border border-zinc-800/50"><div className="flex items-center gap-3 border-r border-zinc-700/50 pr-6"><div className="bg-white text-zinc-950 text-xs font-bold px-2 py-0.5 rounded-md min-w-[24px] text-center">{selectedItems.size}</div><span className="text-sm font-medium">Selected</span></div><div className="flex items-center gap-2"><button onClick={() => handleSelectAll([...filteredCredentials.map(c => c.id), ...currentFolders.map(f => f.id)])} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-white" title="Select All Matching Items"><ListChecks className="h-5 w-5" /></button><button onClick={() => openMoveModal(null, currentFolderId)} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-sm font-medium transition-all"><Move className="h-4 w-4" /><span>Move</span></button><button onClick={(e) => openDeleteModal('bulk', 'bulk', e)} className="flex items-center gap-2 px-4 py-2 bg-rose-900/30 text-rose-400 hover:bg-rose-900/50 hover:text-rose-300 rounded-full text-sm font-medium transition-all border border-rose-900/50"><Trash2 className="h-4 w-4" /><span>Delete</span></button></div><div className="border-l border-zinc-700/50 pl-6"><button onClick={clearSelection} className="text-zinc-500 hover:text-white transition-colors"><X className="h-5 w-5" /></button></div></motion.div>)}</AnimatePresence>, document.body)}
-        </section>
-      )}
+      </section>
 
-      {/* SQL SETUP MODAL */}
-      <Modal isOpen={isSqlModalOpen} onClose={() => setIsSqlModalOpen(false)} title="Database Setup SQL" maxWidth="4xl">
-        <div className="space-y-4">
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">
-            <p><strong>Missing Tables Detected:</strong> The application requires tables for Folders, Credentials, and Real-time Chat.</p>
-            <p className="mt-1">Copy the SQL code below and run it in your Supabase SQL Editor.</p>
-          </div>
-          <div className="relative">
-            <pre className="bg-slate-900 text-slate-50 p-4 rounded-lg text-xs overflow-x-auto font-mono leading-relaxed h-96 border border-slate-700 shadow-inner">
-              {SETUP_SQL}
-            </pre>
-            <div className="absolute top-2 right-2">
-              <button className="p-1.5 bg-white/10 hover:bg-white/20 rounded text-white flex items-center transition-colors" onClick={() => navigator.clipboard.writeText(SETUP_SQL)} title="Copy SQL"><Copy className="h-4 w-4" /></button>
-            </div>
-          </div>
-          <div className="flex justify-end pt-2 border-t border-gray-100"><Button variant="secondary" onClick={() => setIsSqlModalOpen(false)}>Close</Button></div>
-        </div>
+      {/* --- MODALS --- */}
+      
+      {/* Create Folder Modal */}
+      <Modal isOpen={isCreateFolderModalOpen} onClose={() => setIsCreateFolderModalOpen(false)} title="New Directory">
+          <form onSubmit={handleCreateFolder}>
+              <Input label="Folder Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Finance, Operations" autoFocus />
+              <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFolderModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Create Folder</Button></div>
+          </form>
       </Modal>
 
-      {/* ... Other Modals ... */}
-      <Modal isOpen={isCreateFolderModalOpen} onClose={() => setIsCreateFolderModalOpen(false)} title="Create New Folder" maxWidth="sm">
-         <form onSubmit={handleCreateFolder} className="space-y-4">
-             <Input label="Folder Name" placeholder="e.g. Marketing Clients" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} required autoFocus />
-             <div className="flex justify-end space-x-3 pt-2"><Button type="button" variant="secondary" onClick={() => setIsCreateFolderModalOpen(false)}>Cancel</Button><Button type="submit">Create Folder</Button></div>
-         </form>
-      </Modal>
-
-      <Modal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} title="Move Items" maxWidth="sm">
-          <div className="space-y-4">
-              <p className="text-sm text-gray-600">Select destination folder:</p>
-              <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
-                  <button onClick={() => setSelectedMoveFolderId(null)} className={`w-full text-left px-4 py-3 text-sm flex items-center border-b border-gray-100 hover:bg-gray-50 ${selectedMoveFolderId === null ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700'}`}><Home className="h-4 w-4 mr-2" />Vault Root{selectedMoveFolderId === null && <Check className="ml-auto h-4 w-4" />}</button>
-                  {folders.map(folder => { if (selectedItems.has(folder.id)) return null; return (<button key={folder.id} onClick={() => setSelectedMoveFolderId(folder.id)} className={`w-full text-left px-4 py-3 text-sm flex items-center border-b border-gray-100 hover:bg-gray-50 ${selectedMoveFolderId === folder.id ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700'}`}><Folder className="h-4 w-4 mr-2 text-gray-400" />{folder.name}{selectedMoveFolderId === folder.id && <Check className="ml-auto h-4 w-4" />}</button>); })}
-              </div>
-              <div className="flex justify-end space-x-3 pt-2"><Button variant="secondary" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button><Button onClick={handleMoveItems}>Move {selectedItems.size > 0 ? `${selectedItems.size} Items` : 'Item'}</Button></div>
-          </div>
-      </Modal>
-
-      <Modal isOpen={deleteConfirmation.isOpen} onClose={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })} title={deleteConfirmation.type === 'bulk' ? "Bulk Delete" : (deleteConfirmation.type === 'folder' ? "Delete Folder" : "Confirm Deletion")} maxWidth="sm">
-        <div className="flex flex-col items-center text-center space-y-4">
-            <div className="h-12 w-12 rounded-full bg-rose-100 flex items-center justify-center"><Trash2 className="h-6 w-6 text-rose-600" /></div>
-            <div><h4 className="text-lg font-medium text-gray-900">{deleteConfirmation.type === 'bulk' ? `Delete ${selectedItems.size} Items?` : (deleteConfirmation.type === 'folder' ? "Delete Folder?" : "Delete Credential?")}</h4><p className="text-sm text-gray-500 mt-1">{deleteConfirmation.type === 'bulk' ? "This will permanently remove the selected folders (and their contents) and credentials." : (deleteConfirmation.type === 'folder' ? "This will permanently remove the folder and ALL items inside it." : "This action cannot be undone. The credential will be permanently removed.")}</p></div>
-            <div className="flex w-full space-x-3 mt-4"><Button variant="secondary" onClick={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })} className="flex-1">Cancel</Button><Button variant="danger" onClick={confirmDelete} className="flex-1">Delete</Button></div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title={editingId ? "Edit Credential" : "Store New Credential"}>
-        <form onSubmit={handleSaveCredential} className="space-y-4">
-          <Input label="Client Name" placeholder="e.g. Acme Corp" value={newCred.clientName} onChange={(e) => setNewCred({...newCred, clientName: e.target.value})} required autoFocus />
-          <div className="relative" ref={crmInputWrapperRef}><Input label="CRM Name" placeholder="e.g. HubSpot CRM" value={newCred.serviceName} onChange={(e) => { setNewCred({...newCred, serviceName: e.target.value}); setShowCrmSuggestions(true); }} onFocus={() => setShowCrmSuggestions(true)} required autoComplete="off" />{showCrmSuggestions && (<div className="absolute z-50 w-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 max-h-48 overflow-y-auto animate-fade-in">{(() => { const input = newCred.serviceName.toLowerCase(); const existing = Array.from(new Set(credentials.map(c => c.serviceName))).filter(Boolean); const all = Array.from(new Set([...existing, ...COMMON_CRMS])); const filtered = input ? all.filter(c => String(c).toLowerCase().includes(input)) : all; const finalSuggestions = filtered.sort(); if (finalSuggestions.length === 0) return <div className="px-4 py-3 text-sm text-gray-400 italic">Type to create new...</div>; return finalSuggestions.map((crm) => (<button key={crm} type="button" onClick={() => { setNewCred({ ...newCred, serviceName: crm }); setShowCrmSuggestions(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors border-b border-gray-50 last:border-0 block truncate">{crm}</button>)); })()}</div>)}</div>
-          <Input label="CRM Link" placeholder="https://..." value={newCred.crmLink} onChange={(e) => setNewCred({...newCred, crmLink: e.target.value})} required />
-          <div className="grid grid-cols-2 gap-4">
-            <div className="relative" ref={emailInputWrapperRef}><Input label="Login Email" placeholder="user@example.com" value={newCred.username} onChange={(e) => { setNewCred({...newCred, username: e.target.value}); setShowEmailSuggestions(true); }} onFocus={() => setShowEmailSuggestions(true)} required autoComplete="off" />{showEmailSuggestions && (<div className="absolute z-50 w-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 max-h-48 overflow-y-auto animate-fade-in">{(() => { const input = newCred.username.toLowerCase(); const filtered = input ? uniqueEmails.filter(e => e.toLowerCase().includes(input)) : uniqueEmails; if (filtered.length === 0) return null; return filtered.map((email) => (<button key={email} type="button" onClick={() => { setNewCred({ ...newCred, username: email }); setShowEmailSuggestions(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors border-b border-gray-50 last:border-0 block truncate">{email}</button>)); })()}</div>)}</div>
-            <Input label="Password" type="password" placeholder="••••••••" value={newCred.password} onChange={(e) => setNewCred({...newCred, password: e.target.value})} required />
-          </div>
-          <div className="pt-4 flex justify-end space-x-3"><Button type="button" variant="secondary" onClick={() => setIsAddModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isSavingCredential}>{editingId ? "Save Changes" : "Securely Save"}</Button></div>
-        </form>
+      {/* Create Form Modal */}
+      <Modal isOpen={isCreateFormModalOpen} onClose={() => setIsCreateFormModalOpen(false)} title="Initiate Form Protocol">
+          <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newFolderName.trim()) return; 
+              setIsProcessingAction(true);
+              try {
+                  const { data, error } = await supabase.from('forms').insert({ name: newFolderName, folder_id: currentFolderId, status: 'draft' }).select().single();
+                  if (error) throw error;
+                  setForms(prev => [{ id: data.id, name: data.name, folderId: data.folder_id, webhookKey: data.webhook_key, webhookUrl: `${BASE_WEBHOOK_URL}?key=${data.webhook_key}`, fields: [], createdAt: data.created_at, status: 'draft' }, ...prev]);
+                  setIsCreateFormModalOpen(false);
+                  setNewFolderName('');
+                  setCurrentFormId(data.id);
+                  setFormViewMode('builder');
+              } catch (err) { setToast({ message: "Creation failed", type: "error" }); } finally { setIsProcessingAction(false); }
+          }}>
+              <Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Client Intake V1" autoFocus />
+              <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Initialize Form</Button></div>
+          </form>
       </Modal>
       
-      {/* Same submission modal as before... */}
-      <Modal isOpen={isEditSubmissionModalOpen} onClose={() => setIsEditSubmissionModalOpen(false)} title="Edit Submission Data" maxWidth="2xl">
-        {editingSubmission && (
-          <form onSubmit={handleSaveSubmission} className="space-y-6">
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start"><AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" /><div className="ml-3"><h4 className="text-sm font-semibold text-amber-800">Data Integrity Warning</h4><p className="text-xs text-amber-700 mt-0.5">Editing raw submission payloads directly updates the database record. Ensure data format consistency for downstream integrations.</p></div></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{Object.entries(editingSubmission.payload).map(([key, value]) => { const stringValue = String(value); const isLongText = stringValue.length > 60; return (<div key={key} className={isLongText ? "md:col-span-2" : ""}><label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">{formatLabel(key)}</label>{isLongText ? (<textarea rows={3} className="appearance-none block w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-colors" value={stringValue} onChange={(e) => handlePayloadChange(key, e.target.value)} />) : (<input type="text" className="appearance-none block w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-colors" value={stringValue} onChange={(e) => handlePayloadChange(key, e.target.value)} />)}</div>); })}</div>
-            <div className="pt-4 flex justify-end space-x-3 border-t border-gray-100"><Button type="button" variant="secondary" onClick={() => setIsEditSubmissionModalOpen(false)}>Cancel</Button><Button type="submit">Save Changes</Button></div>
-          </form>
-        )}
+      {/* Mapping Key Modal */}
+      <Modal isOpen={isMappingModalOpen} onClose={() => setIsMappingModalOpen(false)} title="Select Data Point">
+          <div className="mb-4 relative">
+             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+             <input type="text" className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" placeholder="Search keys..." value={mappingSearchQuery} onChange={(e) => setMappingSearchQuery(e.target.value)} autoFocus />
+          </div>
+          <div className="max-h-[300px] overflow-y-auto border border-gray-100 rounded-lg bg-gray-50 p-2">
+              {renderMappingPicker()}
+          </div>
       </Modal>
+      
+      {/* Delete Confirmation */}
+      <Modal isOpen={deleteConfirmation.isOpen} onClose={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })} title="Confirm Termination">
+          <div className="text-center p-4">
+              <div className="bg-rose-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4"><AlertTriangle className="h-8 w-8 text-rose-600" /></div>
+              <h3 className="text-lg font-bold text-gray-900">Delete {deleteConfirmation.type === 'bulk' ? 'Selected Items' : 'Record'}?</h3>
+              <p className="text-sm text-gray-500 mt-2">This action is irreversible. All associated data will be incinerated.</p>
+              <div className="mt-8 flex justify-center gap-3"><Button variant="secondary" onClick={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })}>Cancel</Button><Button variant="danger" onClick={confirmDelete} isLoading={isProcessingAction}>Confirm Deletion</Button></div>
+          </div>
+      </Modal>
+
+      {/* Move Modal */}
+      <Modal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} title={`Move ${selectedItems.size} Item(s)`}>
+          <div className="space-y-4">
+               <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors flex items-center" onClick={() => setMoveTargetFolderId(null)}>
+                    <Home className="h-5 w-5 text-gray-400 mr-3" />
+                    <span className="text-sm font-medium text-gray-700">Vault Root</span>
+                    {moveTargetFolderId === null && <CheckCircle2 className="h-4 w-4 ml-auto text-indigo-600" />}
+               </div>
+               <div className="max-h-[200px] overflow-y-auto space-y-2">
+                   {folders.filter(f => !selectedItems.has(f.id) && f.type === (activeMainTab === 'credentials' ? 'credential' : 'form')).map(f => (
+                       <div key={f.id} onClick={() => setMoveTargetFolderId(f.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center transition-colors ${moveTargetFolderId === f.id ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+                            <Folder className={`h-5 w-5 mr-3 ${moveTargetFolderId === f.id ? 'text-indigo-500' : 'text-gray-400'}`} />
+                            <span className={`text-sm font-medium ${moveTargetFolderId === f.id ? 'text-indigo-900' : 'text-gray-700'}`}>{f.name}</span>
+                            {moveTargetFolderId === f.id && <CheckCircle2 className="h-4 w-4 ml-auto text-indigo-600" />}
+                       </div>
+                   ))}
+               </div>
+               <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+                   <Button variant="secondary" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button>
+                   <Button onClick={handleBulkMove} isLoading={isProcessingAction}>Move Items</Button>
+               </div>
+          </div>
+      </Modal>
+
+      {/* Add/Edit Credential Modal */}
+      <Modal isOpen={isAddModalOpen || !!editingId} onClose={() => { setIsAddModalOpen(false); setEditingId(null); setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null }); setShowCrmDropdown(false); }} title={editingId ? 'Edit Credential' : 'Add Credential'}>
+           <form onSubmit={async (e) => {
+               e.preventDefault();
+               setIsProcessingAction(true);
+               try {
+                   const payload = { 
+                       client_name: newCred.clientName,
+                       service_name: newCred.serviceName,
+                       crm_link: newCred.crmLink,
+                       username: newCred.username,
+                       password: newCred.password,
+                       folder_id: currentFolderId || newCred.folderId 
+                   };
+                   
+                   if (editingId) {
+                       const { error } = await supabase.from('credentials').update({ ...payload, last_updated: new Date() }).eq('id', editingId);
+                       if (error) throw error;
+                       setCredentials(prev => prev.map(c => c.id === editingId ? { ...c, ...payload, id: editingId, lastUpdated: new Date() } : c));
+                   } else {
+                       const { data, error } = await supabase.from('credentials').insert(payload).select().single();
+                       if (error) throw error;
+                       setCredentials(prev => [{ id: data.id, clientName: data.client_name, serviceName: data.service_name, crmLink: data.crm_link, username: data.username, password: data.password, lastUpdated: new Date(data.created_at), folderId: data.folder_id }, ...prev]);
+                   }
+                   setToast({ message: "Credential Saved", type: "success" });
+                   setIsAddModalOpen(false);
+                   setEditingId(null);
+                   setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null });
+               } catch(err) { setToast({ message: "Operation failed", type: "error" }); } finally { setIsProcessingAction(false); }
+           }}>
+               <div className="space-y-4">
+                   <Input label="Client Name" value={newCred.clientName} onChange={e => setNewCred({...newCred, clientName: e.target.value})} required />
+                   <div className="relative" ref={crmDropdownRef}>
+                        <Input 
+                            label="Service / CRM" 
+                            value={newCred.serviceName} 
+                            onChange={e => setNewCred({...newCred, serviceName: e.target.value})}
+                            onFocus={() => setShowCrmDropdown(true)}
+                            required 
+                        />
+                        <AnimatePresence>
+                        {showCrmDropdown && (
+                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto overflow-x-hidden animate-fade-in">
+                                {COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).map(service => (
+                                    <div 
+                                        key={service} 
+                                        onClick={() => { setNewCred({...newCred, serviceName: service}); setShowCrmDropdown(false); }}
+                                        className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 flex items-center transition-colors"
+                                    >
+                                        <Briefcase className="w-3.5 h-3.5 mr-2 text-gray-400" />
+                                        {service}
+                                    </div>
+                                ))}
+                                {COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).length === 0 && (
+                                    <div className="px-4 py-2 text-xs text-gray-400 italic">Type to add custom service...</div>
+                                )}
+                            </div>
+                        )}
+                        </AnimatePresence>
+                   </div>
+                   <Input label="Link" value={newCred.crmLink} onChange={e => setNewCred({...newCred, crmLink: e.target.value})} />
+                   <div className="grid grid-cols-2 gap-4">
+                       <Input label="Username" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} />
+                       <Input label="Password" type="text" value={newCred.password} onChange={e => setNewCred({...newCred, password: e.target.value})} />
+                   </div>
+                   <div className="pt-4 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => { setIsAddModalOpen(false); setEditingId(null); }}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Record</Button></div>
+               </div>
+           </form>
+      </Modal>
+
+      {/* Delete Submission Modal */}
+      <Modal isOpen={isDeleteRecordModalOpen} onClose={() => setIsDeleteRecordModalOpen(false)} title="Delete Submission">
+          <div className="text-center p-4">
+               <p className="text-gray-600 mb-6">Are you sure you want to delete this submission record?</p>
+               <div className="flex justify-center gap-3"><Button variant="secondary" onClick={() => setIsDeleteRecordModalOpen(false)}>Cancel</Button><Button variant="danger" onClick={handleDeleteSubmission} isLoading={isProcessingAction}>Delete</Button></div>
+          </div>
+      </Modal>
+
+      {/* --- Floating Bottom Navigation --- */}
+      {createPortal(
+        <AnimatePresence>
+          {selectedItems.size > 0 && (
+            <div className="navbar-fixed-container">
+              <motion.div
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 100, opacity: 0 }}
+                className="selection-navbar"
+              >
+                <div className="selection-count-badge">{selectedItems.size}</div>
+                <span className="text-sm font-medium whitespace-nowrap">Selected</span>
+                
+                <div className="navbar-divider"></div>
+
+                <div className="flex items-center gap-2">
+                    <button onClick={handleSelectAll} className="navbar-btn-icon group" title="Select All">
+                        <ListChecks size={18} />
+                    </button>
+                </div>
+                
+                <div className="navbar-divider"></div>
+
+                <div className="flex items-center gap-2">
+                   {canMutate && (
+                       <>
+                           <button onClick={() => setIsMoveModalOpen(true)} className="navbar-btn-move">
+                             <Move size={14} /> Move
+                           </button>
+                           <button onClick={() => setDeleteConfirmation({ isOpen: true, id: null, type: 'bulk' })} className="navbar-btn-delete">
+                             <Trash2 size={14} /> Delete
+                           </button>
+                       </>
+                   )}
+                   {!canMutate && (
+                       <span className="text-xs text-gray-500 italic px-2">Read Only</span>
+                   )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
     </div>
   );

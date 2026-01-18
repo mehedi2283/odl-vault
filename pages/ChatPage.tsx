@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Lock, Shield, User as UserIcon, RefreshCcw, MoreVertical, Crown, UserCheck, AlertTriangle } from 'lucide-react';
-import Button from '../src/components/Button';
+import { Send, Lock, Shield, User as UserIcon, Crown, UserCheck, AlertTriangle } from 'lucide-react';
+import Button from '../components/Button';
 import { supabase } from '../services/supabase';
 import { ChatMessage, User } from '../types';
 
@@ -30,8 +30,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     const fetchHistory = async () => {
       setConnectionError(null);
       try {
-        // Get messages and join with profiles to get display names
-        // Removed 'full_name' from selection to prevent schema errors
         const { data, error } = await supabase
           .from('messages')
           .select(`
@@ -59,15 +57,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         }
       } catch (err: any) {
         console.error('Error fetching chat:', err.message || err);
-        if (err.message?.includes('does not exist') || err.message?.includes('missing FROM-clause')) {
-             // Fallback for missing tables or columns
-             if (err.message.includes('full_name')) {
-                 setConnectionError("Database Schema Mismatch: 'full_name' column missing.");
-             } else {
-                 setConnectionError("Secure Channel Offline: Database tables not configured. Run the setup SQL in Dashboard.");
-             }
+        if (err.message?.includes('does not exist')) {
+             setConnectionError("Secure Channel Offline: Tables missing. Run setup SQL.");
         } else {
-            setConnectionError(`Connection Interrupted: ${err.message || 'Unknown error'}`);
+            setConnectionError("Connection Interrupted");
         }
       }
     };
@@ -77,18 +70,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // Fetch the sender's profile for the new message
-        // Removed full_name here as well
-        const { data, error } = await supabase
+        // Fetch sender details
+        const { data } = await supabase
           .from('profiles')
           .select('username, role')
           .eq('id', payload.new.user_id)
           .single();
         
-        if (error) {
-             console.warn("Could not fetch profile for message sender", error.message);
-        }
-
         const newMessage: ChatMessage = {
            id: payload.new.id,
            user_id: payload.new.user_id,
@@ -98,15 +86,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
            role: data?.role
         };
         
-        // Deduplication: Check if message ID already exists (from optimistic update)
         setMessages(prev => {
-            if (prev.some(msg => msg.id === newMessage.id)) {
-                return prev;
-            }
+            if (prev.some(msg => msg.id === newMessage.id)) return prev;
             return [...prev, newMessage];
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+            console.log('Secure channel subscribed');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -118,12 +107,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     if (!input.trim() || !user) return;
     
     const content = input.trim();
-    const tempId = crypto.randomUUID(); // Generate client-side ID for instant display
+    const tempId = crypto.randomUUID(); 
     
-    setInput(''); // Clear input immediately
+    setInput('');
     setIsLoading(true);
 
-    // Optimistic Update: Show message immediately
+    // Optimistic Update
     const optimisticMessage: ChatMessage = {
         id: tempId,
         user_id: user.id,
@@ -137,98 +126,88 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
 
     try {
       const { error } = await supabase.from('messages').insert({
-        id: tempId, // Send the UUID we generated
+        id: tempId,
         user_id: user.id,
         content: content
       });
       
       if (error) {
-          // Rollback on error
-          setMessages(prev => prev.filter(m => m.id !== tempId));
+          setMessages(prev => prev.filter(m => m.id !== tempId)); // Rollback
           throw error;
       }
     } catch (error: any) {
-      console.error("Failed to send message", error.message || error);
-      setConnectionError(`Transmission Failed: ${error.message || 'Unknown Error'}`);
+      console.error("Failed to send", error);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-      {/* Chat Header */}
-      <div className="bg-white border-b border-gray-100 p-4 px-6 flex items-center justify-between shadow-sm z-10">
+    <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
         <div className="flex items-center space-x-4">
-          <div className="relative">
-            <div className="bg-indigo-50 p-2.5 rounded-full">
-               <Shield className="h-6 w-6 text-indigo-600" />
-            </div>
-            <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${connectionError ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+          <div className="bg-indigo-50 p-3 rounded-full border border-indigo-100">
+             <Shield className="h-6 w-6 text-indigo-600" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">ODL Secure Channel</h2>
-            <div className="flex items-center">
-               <Lock className="h-3 w-3 text-emerald-500 mr-1" />
-               <p className="text-xs text-gray-500 font-medium">
-                 {connectionError ? 'Encryption Destabilized' : 'Encrypted Team Comms'}
-               </p>
+            <h2 className="text-lg font-bold text-gray-900 leading-tight">ODL Secure Channel</h2>
+            <div className="flex items-center mt-1">
+               <Lock className="h-3 w-3 text-emerald-500 mr-1.5" />
+               <p className="text-xs text-gray-500 font-medium">Encrypted Team Comms</p>
             </div>
           </div>
         </div>
+        <div className={`h-2.5 w-2.5 rounded-full ${connectionError ? 'bg-rose-500' : 'bg-emerald-500'} ring-4 ring-white shadow-sm`}></div>
       </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 relative">
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-[#f9fafb] relative">
         {connectionError && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-20">
-                <div className="bg-white p-6 rounded-xl shadow-xl border border-rose-100 max-w-md text-center">
-                    <div className="mx-auto w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center mb-3">
-                        <AlertTriangle className="h-6 w-6 text-rose-500" />
-                    </div>
-                    <h3 className="text-gray-900 font-bold mb-1">Comms Offline</h3>
-                    <p className="text-sm text-gray-500 mb-4">{connectionError}</p>
-                    <Button variant="secondary" onClick={() => window.location.reload()}>Reconnect</Button>
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+                <div className="bg-rose-50 text-rose-600 px-4 py-2 rounded-lg text-sm border border-rose-100 shadow-sm flex items-center">
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    {connectionError}
                 </div>
             </div>
         )}
 
         {messages.length === 0 && !connectionError && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
-                <Shield size={48} className="mb-4 text-gray-300" />
-                <p className="text-sm font-medium">Secure Channel Established</p>
-                <p className="text-xs">No transmissions recorded.</p>
-            </div>
+             <div className="flex flex-col items-center justify-center h-full opacity-30">
+                 <Shield size={64} className="text-gray-400 mb-4" />
+                 <p className="text-gray-500 font-medium">Secure Channel Ready</p>
+             </div>
         )}
 
-        {messages.map((msg) => {
+        {messages.map((msg, index) => {
           const isMe = msg.user_id === user?.id;
           const isAdmin = msg.role === 'grand_admin' || msg.role === 'admin';
+          const showHeader = index === 0 || messages[index - 1].user_id !== msg.user_id;
           
           return (
-            <div
-              key={msg.id}
-              className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`flex max-w-[85%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-3`}>
+            <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                 
-                {/* Avatar */}
-                <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center shadow-sm mb-1 ${isAdmin ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
-                  {isAdmin ? <Crown size={14} /> : <UserCheck size={14} />}
-                </div>
-                
-                <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 mb-1 px-1">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{msg.username}</span>
-                      <span className="text-[9px] text-gray-300">{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  </div>
-                  <div className={`px-5 py-3.5 shadow-sm text-sm leading-relaxed ${
+                {showHeader && (
+                    <div className={`flex items-center mb-1.5 ${isMe ? 'flex-row-reverse' : 'flex-row'} gap-2`}>
+                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{msg.username}</span>
+                         <span className="text-[9px] text-gray-300">{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                )}
+
+                <div className={`px-5 py-3 text-sm leading-relaxed shadow-sm relative ${
                     isMe 
-                      ? 'bg-indigo-600 text-white rounded-2xl rounded-br-none' 
-                      : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-bl-none'
+                      ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm' 
+                      : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm'
                   }`}>
                     {msg.content}
-                  </div>
+                    
+                    {/* Role Icon floating */}
+                    {showHeader && !isMe && isAdmin && (
+                         <div className="absolute -left-3 -top-3 bg-white p-1 rounded-full shadow-sm border border-indigo-100">
+                             <Crown size={10} className="text-indigo-600" />
+                         </div>
+                    )}
                 </div>
               </div>
             </div>
@@ -237,29 +216,25 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="bg-white border-t border-gray-200 p-4">
-        <div className="max-w-5xl mx-auto">
-          <form onSubmit={handleSend} className="relative flex items-center gap-3">
-             <div className="relative flex-1 group">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Transmit secure message..."
-                  className="w-full pl-5 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!!connectionError}
-                />
-             </div>
+      {/* Input */}
+      <div className="bg-white border-t border-gray-100 p-5">
+        <form onSubmit={handleSend} className="relative flex items-center gap-3 max-w-5xl mx-auto">
+             <input
+               type="text"
+               value={input}
+               onChange={(e) => setInput(e.target.value)}
+               placeholder="Transmit secure message..."
+               className="w-full pl-5 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200"
+               disabled={!!connectionError}
+             />
             <Button 
               type="submit" 
               disabled={isLoading || !input.trim() || !!connectionError}
-              className="px-4 h-[50px] rounded-xl aspect-square flex items-center justify-center !p-0"
+              className="px-0 w-12 h-12 rounded-xl flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
             >
-              <Send className="h-5 w-5 ml-0.5" />
+              <Send className="h-5 w-5 text-white ml-0.5" />
             </Button>
-          </form>
-        </div>
+        </form>
       </div>
     </div>
   );
