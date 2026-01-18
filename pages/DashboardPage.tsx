@@ -172,6 +172,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   
   // --- FILTERS & EDITING ---
   const [searchQuery, setSearchQuery] = useState('');
+  const [crmFilter, setCrmFilter] = useState<string>('All');
+  const [isCrmFilterOpen, setIsCrmFilterOpen] = useState(false);
+  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newCred, setNewCred] = useState<Omit<StoredCredential, 'id' | 'lastUpdated'>>({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null });
   const [newFolderName, setNewFolderName] = useState('');
@@ -191,6 +194,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const statusDropdownRef = useRef<HTMLDivElement>(null);
   const submissionDropdownRef = useRef<HTMLDivElement>(null);
   const crmDropdownRef = useRef<HTMLDivElement>(null);
+  const crmFilterRef = useRef<HTMLDivElement>(null);
 
   const ITEMS_PER_PAGE = 6;
   const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
@@ -211,6 +215,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
       if (crmDropdownRef.current && !crmDropdownRef.current.contains(event.target as Node)) {
           setShowCrmDropdown(false);
+      }
+      if (crmFilterRef.current && !crmFilterRef.current.contains(event.target as Node)) {
+          setIsCrmFilterOpen(false);
       }
     };
     document.addEventListener('click', handleClickOutside);
@@ -494,6 +501,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   };
 
   // --- FILTERING & PAGINATION LOGIC ---
+  const availableCrms = useMemo(() => {
+    const services = new Set(credentials.map(c => c.serviceName).filter(Boolean));
+    return ['All', ...Array.from(services).sort()];
+  }, [credentials]);
   
   const currentFolders = folders.filter(f => {
       const isCorrectType = activeMainTab === 'credentials' 
@@ -512,8 +523,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   });
 
   const currentCredentials = credentials.filter(c => {
-      if (searchQuery) return c.clientName.toLowerCase().includes(searchQuery.toLowerCase());
-      return c.folderId === currentFolderId;
+      const matchesCrm = crmFilter === 'All' || c.serviceName === crmFilter;
+      if (searchQuery) {
+          return c.clientName.toLowerCase().includes(searchQuery.toLowerCase()) && matchesCrm;
+      }
+      return c.folderId === currentFolderId && matchesCrm;
   });
 
   const currentForms = forms.filter(f => {
@@ -692,6 +706,55 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
             {!currentFormId && (
                 <div className="relative group w-full md:w-64 lg:w-80 shadow-sm rounded-xl"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-gray-400" /></div><input type="text" className="block w-full pl-10 pr-3 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder={activeMainTab === 'credentials' ? "Search secure records..." : "Search forms..."} value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} /></div>
             )}
+
+            {/* CRM Filter Dropdown */}
+            {!currentFormId && activeMainTab === 'credentials' && (
+                <div className="relative" ref={crmFilterRef}>
+                    <button
+                        onClick={() => setIsCrmFilterOpen(!isCrmFilterOpen)}
+                        className={`flex items-center gap-2 px-3 py-2.5 bg-white border rounded-xl text-sm font-medium transition-all shadow-sm ${
+                            crmFilter !== 'All' 
+                            ? 'border-indigo-200 text-indigo-600 bg-indigo-50' 
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                    >
+                        <ListFilter className="h-4 w-4" />
+                        <span className="max-w-[100px] truncate">{crmFilter === 'All' ? 'Filter CRM' : crmFilter}</span>
+                        <ChevronDown className={`h-3 w-3 opacity-50 transition-transform ${isCrmFilterOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    <AnimatePresence>
+                        {isCrmFilterOpen && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 5 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 5 }}
+                                className="absolute right-0 mt-2 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-72 overflow-y-auto"
+                            >
+                                <div className="p-1">
+                                    <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Services</div>
+                                    {availableCrms.map(crm => (
+                                        <button
+                                            key={crm}
+                                            onClick={() => { setCrmFilter(crm); setIsCrmFilterOpen(false); setCurrentPage(1); }}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between transition-colors ${
+                                                crmFilter === crm ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <span className="truncate">{crm}</span>
+                                            {crmFilter === crm && <Check size={14} className="text-indigo-600" />}
+                                        </button>
+                                    ))}
+                                    {availableCrms.length === 1 && (
+                                        <div className="px-3 py-4 text-center text-xs text-gray-400 italic">No services found</div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            )}
+
            <div className="flex-shrink-0 flex space-x-2">
                {canMutate && (
                  <>
