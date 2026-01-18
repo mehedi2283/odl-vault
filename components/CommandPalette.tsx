@@ -9,7 +9,8 @@ import {
   Command, 
   CornerDownLeft,
   Shield,
-  EyeOff
+  EyeOff,
+  Lock
 } from 'lucide-react';
 import { RoutePath } from '../types';
 
@@ -62,10 +63,19 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ onLogout }) => {
       action: () => navigate('/chat') 
     },
     {
+      id: 'act-lock',
+      label: 'Lock Vault',
+      icon: Lock,
+      category: 'Actions',
+      shortcut: ['⌘', '⇧', 'L'],
+      action: () => window.dispatchEvent(new Event('trigger-manual-lock'))
+    },
+    {
       id: 'act-stealth',
       label: 'Engage Stealth Mode',
       icon: EyeOff,
       category: 'Actions',
+      shortcut: ['⌘', '⇧', 'S'],
       action: () => window.dispatchEvent(new Event('trigger-stealth-mode'))
     },
     {
@@ -162,11 +172,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ onLogout }) => {
                              {cmd.label}
                            </span>
                          </div>
-                         {isSelected && (
-                           <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} className="flex items-center text-indigo-400">
-                             <CornerDownLeft className="w-4 h-4" />
-                           </motion.div>
-                         )}
+                         <div className="flex items-center gap-3">
+                             {cmd.shortcut && (
+                                <div className="hidden sm:flex items-center gap-1">
+                                    {cmd.shortcut.map(key => (
+                                        <kbd key={key} className="min-w-[20px] text-center px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] font-medium text-gray-500">{key}</kbd>
+                                    ))}
+                                </div>
+                             )}
+                             {isSelected && (
+                               <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} className="flex items-center text-indigo-400">
+                                 <CornerDownLeft className="w-4 h-4" />
+                               </motion.div>
+                             )}
+                         </div>
                        </div>
                      );
                    })}

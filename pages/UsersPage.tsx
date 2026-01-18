@@ -153,15 +153,24 @@ create table if not exists public.messages (
   user_id uuid references public.profiles(id)
 );
 
--- 6. ENABLE ROW LEVEL SECURITY
+-- 6. Dead Drops (Publicly Accessible via ID)
+create table if not exists public.dead_drops (
+  id uuid default gen_random_uuid() primary key,
+  content text not null,
+  burn_after_read boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 7. ENABLE ROW LEVEL SECURITY
 alter table public.profiles enable row level security;
 alter table public.folders enable row level security;
 alter table public.credentials enable row level security;
 alter table public.forms enable row level security;
 alter table public.form_submissions enable row level security;
 alter table public.messages enable row level security;
+alter table public.dead_drops enable row level security;
 
--- 7. SECURITY POLICIES (Reads & Standard Updates)
+-- 8. SECURITY POLICIES (Reads & Standard Updates)
 -- Allow read access to authenticated users
 drop policy if exists "Read profiles" on public.profiles;
 create policy "Read profiles" on public.profiles for select using (true);
@@ -200,7 +209,17 @@ create policy "Update submissions" on public.form_submissions for update to auth
 drop policy if exists "Service insert submissions" on public.form_submissions;
 create policy "Service insert submissions" on public.form_submissions for insert to service_role with check (true);
 
--- 8. SECURE FUNCTION FOR ROLE UPDATES (Critical for Admin Permissions)
+-- Dead Drops Policies (Public Access)
+drop policy if exists "Public insert dead_drops" on public.dead_drops;
+create policy "Public insert dead_drops" on public.dead_drops for insert to authenticated with check (true);
+
+drop policy if exists "Public read dead_drops" on public.dead_drops;
+create policy "Public read dead_drops" on public.dead_drops for select to anon, authenticated using (true);
+
+drop policy if exists "Public delete dead_drops" on public.dead_drops;
+create policy "Public delete dead_drops" on public.dead_drops for delete to anon, authenticated using (true);
+
+-- 9. SECURE FUNCTION FOR ROLE UPDATES (Critical for Admin Permissions)
 -- This function bypasses RLS but enforces strict role checks in code.
 create or replace function public.update_user_role(
   target_user_id uuid, 
@@ -238,13 +257,14 @@ $$;
 grant execute on function public.update_user_role(uuid, text) to authenticated;
 grant execute on function public.update_user_role(uuid, text) to service_role;
 
--- 9. BOOTSTRAP GRAND ADMIN (Safety Net)
+-- 10. BOOTSTRAP GRAND ADMIN (Safety Net)
 -- Replace with your actual email if different
 update public.profiles 
 set role = 'grand_admin' 
 where username = 'babu.octopidigital@gmail.com';
 `;
 
+// ... (Rest of component remains unchanged)
 interface UsersPageProps {
   user: User | null;
 }
@@ -258,6 +278,7 @@ interface Profile {
 }
 
 const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
+  // ... (Component Implementation remains unchanged, just updating the SQL constant above)
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

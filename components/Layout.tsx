@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, LogOut, Menu, X, Crown, MessageSquare, Flame, Box, Users } from 'lucide-react';
 import { RoutePath, User } from '../types';
 import CommandPalette from './CommandPalette';
 import InactivityLock from './InactivityLock';
 import StealthMode from './StealthMode';
+import Toast from './Toast';
+import { supabase } from '../services/supabase';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,8 +16,140 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  
+  // Updated Toast State to support roles
+  const [toast, setToast] = useState<{ title?: string; message: string; type?: 'success' | 'error'; role?: string } | null>(null);
+  
   const navigate = useNavigate();
   const location = useLocation();
+  const locationRef = useRef(location);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Keep ref updated for event listener access
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  // --- Global Notification & Audio Logic ---
+  useEffect(() => {
+    const initAudio = () => {
+        if (!audioContextRef.current) {
+            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+            if (AudioContext) audioContextRef.current = new AudioContext();
+        }
+        if (audioContextRef.current?.state === 'suspended') {
+            audioContextRef.current.resume().catch(() => {});
+        }
+    };
+    window.addEventListener('click', initAudio);
+    window.addEventListener('keydown', initAudio);
+
+    return () => {
+        window.removeEventListener('click', initAudio);
+        window.removeEventListener('keydown', initAudio);
+    };
+  }, []);
+
+  const playNotificationSound = async () => {
+      try {
+        if (!audioContextRef.current) return;
+        const ctx = audioContextRef.current;
+        if (ctx.state === 'suspended') await ctx.resume();
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(130.81, ctx.currentTime + 0.3);
+        
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      } catch (e) { /* ignore audio errors */ }
+  };
+
+  useEffect(() => {
+      if (!user) return;
+
+      const channel = supabase.channel('global_notifications')
+          .on(
+              'postgres_changes',
+              { event: 'INSERT', schema: 'public', table: 'messages' },
+              async (payload) => {
+                  // Ignore own messages
+                  if (payload.new.user_id === user.id) return;
+
+                  const isChatOpen = locationRef.current.pathname === '/chat';
+                  const isHidden = document.hidden; 
+
+                  // If user is actively looking at chat, do nothing
+                  if (isChatOpen && !isHidden) return;
+
+                  // 1. Fetch Sender Details (Name AND Role)
+                  const { data: sender } = await supabase
+                      .from('profiles')
+                      .select('username, full_name, role')
+                      .eq('id', payload.new.user_id)
+                      .single();
+                  
+                  const senderName = sender?.full_name || sender?.username || 'Secure Channel';
+                  const senderRole = sender?.role || 'user';
+                  const msgPreview = payload.new.content || 'Encrypted Message';
+
+                  // 2. Play Sound
+                  playNotificationSound();
+
+                  // 3. System Notification
+                  if (Notification.permission === 'granted') {
+                      try {
+                          // Format: [Role] Name: Message
+                          const roleLabel = senderRole === 'grand_admin' ? 'Grand Admin' : 
+                                            senderRole === 'master_admin' ? 'Master Admin' :
+                                            senderRole === 'admin' ? 'Admin' : 'Operative';
+
+                          const notif = new Notification(`[${roleLabel}] ${senderName}`, {
+                              body: msgPreview,
+                              tag: 'odl-chat',
+                              icon: '/favicon.ico',
+                              requireInteraction: true 
+                          });
+                          notif.onclick = () => {
+                              window.focus();
+                              notif.close();
+                              navigate('/chat');
+                          };
+                      } catch (e) {
+                          console.warn('System notification failed', e);
+                      }
+                  }
+
+                  // 4. In-App Toast (Pass Role for Coloring)
+                  if (!isChatOpen) {
+                      setToast({ 
+                          title: senderName,
+                          message: msgPreview, 
+                          role: senderRole,
+                          type: 'success'
+                      });
+                  }
+
+                  // 5. Title Alert
+                  const originalTitle = document.title;
+                  document.title = `(1) New Message`;
+                  setTimeout(() => document.title = originalTitle, 5000);
+              }
+          )
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, [user, navigate]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
@@ -51,6 +185,16 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
 
   return (
     <div className="h-screen bg-gray-50 flex font-sans text-gray-900 overflow-hidden">
+      {toast && (
+        <Toast 
+            title={toast.title}
+            message={toast.message} 
+            type={toast.type} 
+            role={toast.role}
+            onClose={() => setToast(null)} 
+        />
+      )}
+      
       <CommandPalette onLogout={onLogout} />
       {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={10} />}
       <StealthMode />

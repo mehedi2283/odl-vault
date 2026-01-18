@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Lock, Shield, User as UserIcon, Crown, AlertTriangle, ShieldCheck, ShieldAlert, Bell, BellOff } from 'lucide-react';
+import { Send, Lock, Shield, User as UserIcon, Crown, AlertTriangle, ShieldCheck, ShieldAlert, Bell, BellOff, RefreshCw } from 'lucide-react';
 import Button from '../components/Button';
 import Toast from '../components/Toast';
 import { supabase } from '../services/supabase';
@@ -13,12 +13,23 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
+  // Notification Permission State
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    return 'Notification' in window && Notification.permission === 'granted';
+  });
+  
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  
+  // Ref for user access in closures
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,100 +39,19 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     scrollToBottom();
   }, [messages]);
 
-  // Robust Notification Permission Handling
+  // Sync Notification Permission with Browser State
   useEffect(() => {
-    const syncNotificationState = () => {
-        if ('Notification' in window) {
-            // If strictly granted, we assume enabled. If the user manually muted, 
-            // the toggle handler below handles the 'false' state, 
-            // but here we ensure that if permission is lost, we reflect it.
-            if (Notification.permission !== 'granted') {
-                setNotificationsEnabled(false);
-            }
-        }
-    };
-
-    syncNotificationState();
-
-    // Listen for browser-level permission changes (e.g. user changes settings tab)
     if ('permissions' in navigator) {
         navigator.permissions.query({ name: 'notifications' as PermissionName })
             .then((permissionStatus) => {
+                setNotificationsEnabled(permissionStatus.state === 'granted');
                 permissionStatus.onchange = () => {
-                    const isGranted = permissionStatus.state === 'granted';
-                    setNotificationsEnabled(isGranted);
-                    if (isGranted) {
-                         setToast({ message: "Notifications enabled by browser", type: "success" });
-                         playNotificationSound();
-                    }
+                    setNotificationsEnabled(permissionStatus.state === 'granted');
                 };
             })
-            .catch(() => {
-                // Fallback for browsers not supporting this specific permission query
-            });
+            .catch(() => {});
     }
   }, []);
-
-  // Initialize Audio Context on first interaction to bypass autoplay policy
-  useEffect(() => {
-    const initAudio = () => {
-        if (!audioContextRef.current) {
-            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-            if (AudioContext) {
-                audioContextRef.current = new AudioContext();
-            }
-        }
-        if (audioContextRef.current?.state === 'suspended') {
-            audioContextRef.current.resume();
-        }
-        // Remove listeners once initialized
-        window.removeEventListener('click', initAudio);
-        window.removeEventListener('keydown', initAudio);
-    };
-
-    window.addEventListener('click', initAudio);
-    window.addEventListener('keydown', initAudio);
-    return () => {
-        window.removeEventListener('click', initAudio);
-        window.removeEventListener('keydown', initAudio);
-    };
-  }, []);
-
-  const playNotificationSound = async () => {
-    try {
-      if (!audioContextRef.current) {
-          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioContext) audioContextRef.current = new AudioContext();
-      }
-
-      // Resume if suspended (vital for Chrome autoplay policy)
-      if (audioContextRef.current?.state === 'suspended') {
-          await audioContextRef.current.resume();
-      }
-
-      const ctx = audioContextRef.current;
-      if (!ctx) return;
-
-      // Create a pleasant "pop" sound
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-      osc.frequency.exponentialRampToValueAtTime(130.81, ctx.currentTime + 0.3);
-      
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {
-      console.error("Audio play failed", e);
-    }
-  };
 
   const toggleNotifications = async () => {
     if (!('Notification' in window)) {
@@ -129,279 +59,162 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         return;
     }
 
-    // 1. If currently enabled, mute them.
-    if (notificationsEnabled) {
-        setNotificationsEnabled(false);
-        setToast({ message: "Notifications muted", type: 'success' });
-        return;
-    }
-
-    // 2. If disabled, try to enable.
-    const currentPermission = Notification.permission;
-
-    // Case A: Already granted in browser. User just wants to unmute in app.
-    if (currentPermission === 'granted') {
-        setNotificationsEnabled(true);
-        setToast({ message: "Notifications active", type: 'success' });
-        playNotificationSound();
-        return;
-    }
-
-    // Case B: Denied in browser - must instruct user
-    if (currentPermission === 'denied') {
-        setToast({ message: "Notifications blocked. Please enable in browser settings.", type: 'error' });
-        return;
-    }
-
-    // Case C: Default - Request permission
-    try {
+    if (Notification.permission !== 'granted') {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
             setNotificationsEnabled(true);
-            setToast({ message: "System notifications enabled", type: 'success' });
-            playNotificationSound();
+            setToast({ message: "Notifications enabled", type: 'success' });
         } else {
+            setNotificationsEnabled(false);
             setToast({ message: "Permission denied", type: 'error' });
         }
-    } catch (e) {
-        console.error("Notification request failed", e);
+    } else {
+        // Just purely UI toggle if already granted (Logic handled in Layout)
+        setNotificationsEnabled(!notificationsEnabled);
+        setToast({ message: notificationsEnabled ? "Notifications muted" : "Notifications active", type: 'success' });
     }
   };
 
-  const sendSystemNotification = (sender: string, text: string) => {
-    // 1. Tab Title Alert
-    const originalTitle = document.title;
-    document.title = `(1) New Message - ${originalTitle}`;
-    setTimeout(() => document.title = originalTitle, 5000);
-
-    // 2. In-App Toast (Always show for feedback)
-    setToast({ message: `New message from ${sender}`, type: 'success' });
-
-    // 3. Native Notification
-    if (notificationsEnabled && Notification.permission === 'granted') {
-       try {
-           new Notification(`New Message from ${sender}`, {
-               body: text,
-               tag: 'odl-chat',
-               silent: true // We play our own sound
-           });
-       } catch (e) {
-           console.error("Notification trigger failed", e);
-       }
-    }
-  };
-
-  // Standard User color is explicitly gray
-  const getUserColor = (userId: string) => {
-      return 'bg-gray-100 border-gray-200 text-gray-800';
-  };
-
-  const getBubbleStyle = (role: string | undefined, userId: string, isMe: boolean) => {
-      if (isMe) {
-          return 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-600 shadow-sm';
-      }
-      
-      if (role === 'grand_admin') {
-          return 'bg-[#fffbeb] border-[#fcd34d] text-[#92400e] rounded-2xl rounded-tl-sm shadow-sm';
-      }
-
-      if (role === 'master_admin') {
-          return 'bg-blue-50 border-blue-200 text-blue-900 rounded-2xl rounded-tl-sm shadow-sm';
-      }
-
-      if (role === 'admin') {
-          return 'bg-violet-50 border-violet-200 text-violet-900 rounded-2xl rounded-tl-sm shadow-sm';
-      }
-      
-      // Explicit Gray for standard Users
-      const colorClass = getUserColor(userId);
-      return `${colorClass} border rounded-2xl rounded-tl-sm shadow-sm`;
-  };
-
-  const CustomTooltip = ({ text }: { text: string }) => (
-      <div className="absolute bottom-full mb-1 left-0 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30 shadow-lg">
-          {text}
-      </div>
-  );
-
-  const RoleBadge = ({ role }: { role?: string }) => {
-      const baseClasses = "flex items-center justify-center w-6 h-6 rounded-full shadow-sm border ring-2 ring-white";
-
-      if (role === 'grand_admin') {
-          return (
-              <div className="absolute -top-3 -left-3 z-10 group cursor-help">
-                  <div className={`${baseClasses} bg-amber-100 border-amber-200`}>
-                      <Crown size={12} className="text-amber-600 fill-amber-600" />
-                  </div>
-                  <CustomTooltip text="Grand Administrator" />
-              </div>
-          );
-      }
-      if (role === 'master_admin') {
-          return (
-              <div className="absolute -top-3 -left-3 z-10 group cursor-help">
-                  <div className={`${baseClasses} bg-blue-50 border-blue-200`}>
-                      <ShieldCheck size={12} className="text-blue-600 fill-blue-600" />
-                  </div>
-                  <CustomTooltip text="Master Administrator" />
-              </div>
-          );
-      }
-      if (role === 'admin') {
-          return (
-              <div className="absolute -top-3 -left-3 z-10 group cursor-help">
-                  <div className={`${baseClasses} bg-violet-50 border-violet-200`}>
-                      <ShieldAlert size={12} className="text-violet-600 fill-violet-600" />
-                  </div>
-                  <CustomTooltip text="Administrator" />
-              </div>
-          );
-      }
-      return (
-          <div className="absolute -top-3 -left-3 z-10 group cursor-help">
-              <div className={`${baseClasses} bg-white border-gray-200`}>
-                  <UserIcon size={12} className="text-gray-400" />
-              </div>
-              <CustomTooltip text="Operative" />
-          </div>
-      );
-  };
-
-  // Initial Fetch & Realtime Subscription
+  // --- Initial Fetch & Subscription ---
   useEffect(() => {
     if (!user) return;
 
+    // 1. Fetch Initial History
     const fetchHistory = async () => {
-      setConnectionError(null);
-      try {
         const { data, error } = await supabase
-          .from('messages')
-          .select(`
-            id,
-            content,
-            created_at,
-            user_id,
-            profiles ( username, full_name, role )
-          `)
-          .order('created_at', { ascending: true })
-          .limit(50);
-        
-        if (error) throw error;
-        
-        if (data) {
-          const mapped: ChatMessage[] = data.map((m: any) => ({
-            id: m.id,
-            user_id: m.user_id,
-            content: m.content,
-            created_at: m.created_at,
-            username: m.profiles?.username || 'Unknown Agent',
-            full_name: m.profiles?.full_name,
-            role: m.profiles?.role
-          }));
-          setMessages(mapped);
+            .from('messages')
+            .select(`
+                id,
+                content,
+                created_at,
+                user_id,
+                profiles ( username, full_name, role )
+            `)
+            .order('created_at', { ascending: true })
+            .limit(50);
+
+        if (error) {
+            console.error("History fetch error:", error);
+            setConnectionError("Failed to load history");
+        } else if (data) {
+            const mapped: ChatMessage[] = data.map((m: any) => ({
+                id: m.id,
+                user_id: m.user_id,
+                content: m.content,
+                created_at: m.created_at,
+                username: m.profiles?.username || 'Unknown Agent',
+                full_name: m.profiles?.full_name,
+                role: m.profiles?.role
+            }));
+            setMessages(mapped);
         }
-      } catch (err: any) {
-        console.error('Error fetching chat:', err.message || err);
-        if (err.message?.includes('does not exist')) {
-             setConnectionError("Secure Channel Offline: Tables missing. Run setup SQL.");
-        } else {
-            setConnectionError("Connection Interrupted");
-        }
-      }
     };
 
     fetchHistory();
 
-    const messageChannel = supabase
-      .channel('public:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // Fetch sender details including full_name & role
-        const { data } = await supabase
-          .from('profiles')
-          .select('username, full_name, role')
-          .eq('id', payload.new.user_id)
-          .single();
-        
-        const newMessage: ChatMessage = {
-           id: payload.new.id,
-           user_id: payload.new.user_id,
-           content: payload.new.content,
-           created_at: payload.new.created_at,
-           username: data?.username || 'Unknown',
-           full_name: data?.full_name,
-           role: data?.role
-        };
-        
-        // Notification Logic
-        if (
-  user.id !== payload.new.user_id &&
-  document.hidden
-) {
-   playNotificationSound();
-   sendSystemNotification(
-     data?.full_name || data?.username || 'Secure Channel',
-     payload.new.content
-   );
-}
+    // 2. Setup Realtime Subscription
+    // Note: Notifications are now handled globally in Layout.tsx
+    console.log("Initializing Chat UI Subscription...");
+    const channel = supabase.channel('public:room_001')
+        .on(
+            'postgres_changes', 
+            { 
+              event: 'INSERT', 
+              schema: 'public', 
+              table: 'messages' 
+            }, 
+            async (payload) => {
+                const newMsgId = payload.new.id;
+                const senderId = payload.new.user_id;
+                const content = payload.new.content;
+                
+                // Fetch profile details for the new message immediately
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('username, full_name, role')
+                    .eq('id', senderId)
+                    .maybeSingle();
 
-const shouldNotify = document.hidden || !document.hasFocus();
+                setMessages(prev => {
+                    // Avoid duplicates
+                    if (prev.some(m => m.id === newMsgId)) return prev;
 
-if (
-  user.id !== payload.new.user_id &&
-  shouldNotify
-) {
-  playNotificationSound();
-  sendSystemNotification(
-    data?.full_name || data?.username || 'Secure Channel',
-    payload.new.content
-  );
-}
-
-
-
-        setMessages(prev => {
-            if (prev.some(msg => msg.id === newMessage.id)) return prev;
-            return [...prev, newMessage];
-        });
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-            console.log('Secure channel subscribed');
-        }
-      });
-
-    // Subscribe to Profile Updates to reflect role changes in real-time
-    const profileChannel = supabase
-      .channel('public:profiles_chat')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
-        setMessages(prev => prev.map(msg => {
-            if (msg.user_id === payload.new.id) {
-                return {
-                    ...msg,
-                    role: payload.new.role !== undefined ? payload.new.role : msg.role,
-                    full_name: payload.new.full_name !== undefined ? payload.new.full_name : msg.full_name,
-                    username: payload.new.username !== undefined ? payload.new.username : msg.username
-                };
+                    const newMessage: ChatMessage = {
+                        id: newMsgId,
+                        user_id: senderId,
+                        content: content,
+                        created_at: payload.new.created_at,
+                        username: profile?.username || 'Unknown Agent',
+                        full_name: profile?.full_name,
+                        role: profile?.role
+                    };
+                    
+                    return [...prev, newMessage];
+                });
             }
-            return msg;
-        }));
-      })
-      .subscribe();
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                setIsConnected(true);
+                setConnectionError(null);
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                setIsConnected(false);
+                setConnectionError("Realtime Disconnected");
+            }
+        });
 
     return () => {
-      supabase.removeChannel(messageChannel);
-      supabase.removeChannel(profileChannel);
+        supabase.removeChannel(channel);
     };
-  }, [user, notificationsEnabled]); // Re-subscribe if notifications toggle to ensure closure captures new state
+  }, [user?.id]);
+
+  // --- 3. Polling Fallback ---
+  useEffect(() => {
+    if (!user) return;
+
+    const pollMessages = async () => {
+        const { data } = await supabase
+            .from('messages')
+            .select(`
+                id,
+                content,
+                created_at,
+                user_id,
+                profiles ( username, full_name, role )
+            `)
+            .order('created_at', { ascending: false })
+            .limit(15);
+
+        if (data) {
+            const incoming = data.reverse().map((m: any) => ({
+                id: m.id,
+                user_id: m.user_id,
+                content: m.content,
+                created_at: m.created_at,
+                username: m.profiles?.username || 'Unknown Agent',
+                full_name: m.profiles?.full_name,
+                role: m.profiles?.role
+            }));
+
+            setMessages(prev => {
+                const existingIds = new Set(prev.map(m => m.id));
+                const uniqueNew = incoming.filter((m: ChatMessage) => !existingIds.has(m.id));
+                if (uniqueNew.length === 0) return prev;
+                const combined = [...prev, ...uniqueNew].sort((a, b) => 
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                return combined;
+            });
+        }
+    };
+
+    const interval = setInterval(pollMessages, 3000); 
+    return () => clearInterval(interval);
+  }, [user]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
-    
-    // Resume audio context on user interaction (send) if suspended
-    if (audioContextRef.current?.state === 'suspended') {
-        audioContextRef.current.resume();
-    }
     
     const content = input.trim();
     const tempId = crypto.randomUUID(); 
@@ -430,6 +243,7 @@ if (
       
       if (error) {
           setMessages(prev => prev.filter(m => m.id !== tempId)); 
+          setToast({ message: "Transmission failed", type: 'error' });
           throw error;
       }
     } catch (error: any) {
@@ -439,9 +253,26 @@ if (
     }
   };
 
+  const getUserColor = () => 'bg-gray-100 border-gray-200 text-gray-800';
+  
+  const getBubbleStyle = (role: string | undefined, userId: string, isMe: boolean) => {
+      if (isMe) return 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-600 shadow-sm';
+      if (role === 'grand_admin') return 'bg-[#fffbeb] border-[#fcd34d] text-[#92400e] rounded-2xl rounded-tl-sm shadow-sm';
+      if (role === 'master_admin') return 'bg-blue-50 border-blue-200 text-blue-900 rounded-2xl rounded-tl-sm shadow-sm';
+      if (role === 'admin') return 'bg-violet-50 border-violet-200 text-violet-900 rounded-2xl rounded-tl-sm shadow-sm';
+      return `${getUserColor()} border rounded-2xl rounded-tl-sm shadow-sm`;
+  };
+
+  const RoleBadge = ({ role }: { role?: string }) => {
+      const baseClasses = "flex items-center justify-center w-6 h-6 rounded-full shadow-sm border ring-2 ring-white";
+      if (role === 'grand_admin') return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-amber-100 border-amber-200`}><Crown size={12} className="text-amber-600 fill-amber-600" /></div></div>;
+      if (role === 'master_admin') return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-blue-50 border-blue-200`}><ShieldCheck size={12} className="text-blue-600 fill-blue-600" /></div></div>;
+      if (role === 'admin') return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-violet-50 border-violet-200`}><ShieldAlert size={12} className="text-violet-600 fill-violet-600" /></div></div>;
+      return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-white border-gray-200`}><UserIcon size={12} className="text-gray-400" /></div></div>;
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in subpixel-antialiased">
-      {/* Toast Notification Container */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* Header */}
@@ -466,7 +297,7 @@ if (
             >
                 {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
             </button>
-            <div className={`h-2.5 w-2.5 rounded-full ${connectionError ? 'bg-rose-500' : 'bg-emerald-500'} ring-4 ring-white shadow-sm`}></div>
+            <div className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'} ring-4 ring-white shadow-sm transition-colors duration-500`} title={isConnected ? "Secure Connection Active" : "Connection Lost"}></div>
         </div>
       </div>
 
@@ -496,27 +327,17 @@ if (
           return (
             <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div className={`flex flex-col max-w-[85%] ${isMe ? 'items-end' : 'items-start'}`}>
-                
                 {showHeader && (
                     <div className={`flex flex-col mb-1 ${isMe ? 'items-end' : 'items-start ml-4'}`}>
                          <div className="flex items-center">
                             {msg.full_name ? (
-                                <div className="relative group">
-                                    <span className="text-xs font-bold text-gray-800 cursor-default select-none block">
-                                        {msg.full_name}
-                                    </span>
-                                    {/* User Tooltip for Name Hover */}
-                                    <div className={`absolute bottom-full mb-1 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20 shadow-lg ${isMe ? 'right-0' : 'left-0'}`}>
-                                        {msg.username}
-                                    </div>
-                                </div>
+                                <span className="text-xs font-bold text-gray-800 block">{msg.full_name}</span>
                             ) : (
                                 <span className="text-xs font-bold text-gray-500 block">{msg.username}</span>
                             )}
                          </div>
                     </div>
                 )}
-
                 <div className="relative">
                     {!isMe && <RoleBadge role={msg.role} />}
                     <div className={`relative px-5 py-3 text-sm leading-relaxed ${bubbleStyle}`}>
@@ -542,14 +363,14 @@ if (
                onChange={(e) => setInput(e.target.value)}
                placeholder="Transmit secure message..."
                className="w-full pl-5 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200"
-               disabled={!!connectionError}
+               disabled={false}
              />
             <Button 
               type="submit" 
-              disabled={isLoading || !input.trim() || !!connectionError}
+              disabled={isLoading || !input.trim()}
               className="px-0 w-12 h-12 rounded-xl flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
             >
-              <Send className="h-5 w-5 text-white ml-0.5" />
+              {isLoading ? <RefreshCw className="h-5 w-5 animate-spin text-white" /> : <Send className="h-5 w-5 text-white ml-0.5" />}
             </Button>
         </form>
       </div>

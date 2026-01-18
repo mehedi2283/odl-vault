@@ -63,6 +63,27 @@ const InactivityLock: React.FC<InactivityLockProps> = ({ userEmail, userName, on
     }, timeoutMinutes * 60 * 1000);
   }, [isLocked, timeoutMinutes, lockSession]);
 
+  // --- Manual Lock Listeners (Hotkey & Event) ---
+  useEffect(() => {
+    const handleManualLock = () => lockSession();
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Ctrl + Shift + L (or Cmd + Shift + L)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key.toLowerCase() === 'l')) {
+            e.preventDefault();
+            lockSession();
+        }
+    };
+
+    window.addEventListener('trigger-manual-lock', handleManualLock);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+        window.removeEventListener('trigger-manual-lock', handleManualLock);
+        window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lockSession]);
+
   useEffect(() => {
     // Initial setup
     if (!localStorage.getItem(STORAGE_KEYS.LAST_ACTIVE)) {

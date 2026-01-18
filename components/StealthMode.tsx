@@ -14,7 +14,6 @@ const StealthMode: React.FC = () => {
       }
       
       // Engage with Ctrl + Shift + S
-      // using e.code for better reliability across layouts
       if (e.ctrlKey && e.shiftKey && (e.code === 'KeyS' || e.key === 'S' || e.key === 's')) {
         e.preventDefault();
         setActive(true);
@@ -34,11 +33,21 @@ const StealthMode: React.FC = () => {
   if (!active) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-black cursor-none flex items-center justify-center">
-      <div className="text-zinc-900 flex flex-col items-center gap-2 select-none">
-         <EyeOff size={48} />
-         <span className="font-bold text-xl uppercase tracking-widest">Stealth Active</span>
-         <span className="text-sm">Press ESC to disengage</span>
+    <div className="fixed inset-0 z-[10000] bg-black cursor-none flex items-center justify-center animate-fade-in">
+      <div className="flex flex-col items-center gap-8 select-none">
+         {/* Icon Container */}
+         <div className="relative">
+             <div className="absolute inset-0 bg-zinc-800/20 blur-2xl rounded-full"></div>
+             <div className="relative p-6 rounded-full bg-zinc-900/30 text-zinc-800 border border-zinc-900 shadow-2xl animate-pulse">
+                <EyeOff size={64} strokeWidth={1} />
+             </div>
+         </div>
+         
+         {/* Text Info */}
+         <div className="text-center space-y-3 z-10">
+            <h1 className="text-3xl font-black text-zinc-800 uppercase tracking-[0.4em] pl-[0.4em]">Stealth Active</h1>
+            <p className="text-xs font-mono text-zinc-900 uppercase tracking-widest opacity-60">Press ESC to disengage</p>
+         </div>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ChatPage from './pages/ChatPage';
 import DeadDropPage from './pages/DeadDropPage';
+import DeadDropRetrievalPage from './pages/DeadDropRetrievalPage';
 import UsersPage from './pages/UsersPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { RoutePath, User } from './types';
@@ -132,6 +133,12 @@ const App: React.FC = () => {
         <Route 
           path={RoutePath.LOGIN} 
           element={<LoginRoute user={user} />} 
+        />
+        
+        {/* PUBLIC ROUTE FOR DEAD DROP PICKUP */}
+        <Route 
+          path="/pickup/:id" 
+          element={<DeadDropRetrievalPage />} 
         />
         
         <Route
