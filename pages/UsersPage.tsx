@@ -449,11 +449,15 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                     onChange={(e) => setSearchQuery(e.target.value)} 
                 />
             </div>
-            <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
-                 <button onClick={() => setIsEdgeCodeModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-transparent hover:border-indigo-100 transition-all" title="View Edge Function Code"><Terminal className="h-5 w-5" /></button>
-                 <div className="w-px h-6 bg-gray-100"></div>
-                 <button onClick={() => setIsSqlModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-transparent hover:border-indigo-100 transition-all" title="View SQL Schema"><Database className="h-5 w-5" /></button>
-            </div>
+            
+            {/* System Buttons - Only visible to Grand Admin */}
+            {currentUser?.role === 'grand_admin' && (
+              <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
+                   <button onClick={() => setIsEdgeCodeModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-transparent hover:border-indigo-100 transition-all" title="View Edge Function Code"><Terminal className="h-5 w-5" /></button>
+                   <div className="w-px h-6 bg-gray-100"></div>
+                   <button onClick={() => setIsSqlModalOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-transparent hover:border-indigo-100 transition-all" title="View SQL Schema"><Database className="h-5 w-5" /></button>
+              </div>
+            )}
         </div>
       </div>
 
@@ -546,7 +550,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                              {!canEditRole ? (
                                                  <div className="h-8 flex items-center justify-center text-gray-300 px-4" title="Modification Restricted"><Lock className="w-4 h-4" /></div>
                                              ) : (
-                                                 <div className="relative inline-flex bg-gray-100 p-1 rounded-lg border border-gray-200 select-none shadow-inner">
+                                                 <div className="relative inline-flex bg-gray-100 p-1.5 rounded-lg border border-gray-200 select-none shadow-inner">
                                                      {updatingId === profile.id && (<div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-[1px] rounded-lg flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>)}
                                                      
                                                      {/* 
@@ -556,18 +560,17 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                                      */}
 
                                                      {amIGrandAdmin && (
-                                                         <button onClick={() => handleRoleUpdate(profile.id, 'master_admin')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${profile.role === 'master_admin' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Master Admin"><ShieldCheck className="w-3 h-3" /></button>
+                                                         <button onClick={() => handleRoleUpdate(profile.id, 'master_admin')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'master_admin' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Master Admin"><ShieldCheck className="w-4 h-4" /></button>
                                                      )}
 
-                                                     <button onClick={() => handleRoleUpdate(profile.id, 'admin')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${profile.role === 'admin' ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Admin"><ShieldAlert className="w-3 h-3" /></button>
+                                                     <button onClick={() => handleRoleUpdate(profile.id, 'admin')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'admin' ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Admin"><ShieldAlert className="w-4 h-4" /></button>
 
-                                                     <button onClick={() => handleRoleUpdate(profile.id, 'user')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide transition-all ${profile.role === 'user' ? 'bg-white text-gray-800 shadow-sm ring-1 ring-black/5' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Operative"><UserIcon className="w-3 h-3" /></button>
+                                                     <button onClick={() => handleRoleUpdate(profile.id, 'user')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'user' ? 'bg-white text-gray-800 shadow-sm ring-1 ring-black/5' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Operative"><UserIcon className="w-4 h-4" /></button>
                                                  </div>
                                              )}
                                             </div>
                                          </td>
-                                     </motion.tr>
-                                     
+                                     </tr>
                                  );
                              })
                          ) : (

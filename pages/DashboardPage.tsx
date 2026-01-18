@@ -13,7 +13,7 @@ import {
   MoreHorizontal, AlertTriangle, ArrowRight, User as UserIcon, CheckCircle2,
   ExternalLink, Check, MousePointerClick, Briefcase, Ban
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, Variants } from 'framer-motion';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Modal from '../components/Modal';
@@ -64,7 +64,7 @@ const COMMON_SERVICES = [
 ];
 
 // "Goo & Simple" Animation Variants
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
@@ -74,7 +74,7 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { 
     opacity: 0, 
     scale: 0.8,
@@ -109,7 +109,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   
   // --- PERMISSIONS ---
   const hasVaultAccess = user?.role !== 'user';
-  const canMutate = user?.role === 'grand_admin' || user?.role === 'master_admin'; // Edit/Add/Delete
+  // canMutate = Can create/delete/edit records
+  const canMutate = user?.role === 'grand_admin' || user?.role === 'master_admin'; 
+  // canEditSchema = Can access Form Builder / Map Fields
+  const canEditSchema = user?.role === 'grand_admin' || user?.role === 'master_admin';
   
   // --- CORE DATA STATE ---
   const [credentials, setCredentials] = useState<StoredCredential[]>([]);
@@ -725,11 +728,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                 <button onClick={() => setCurrentFormId(null)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-gray-500 transition-all border border-transparent hover:border-gray-200 flex-shrink-0"><ChevronLeft className="h-5 w-5" /></button>
                                 <div className="min-w-0"><h2 className="text-xl font-bold text-gray-900 truncate">{activeForm?.name}</h2><div className="flex items-center gap-2 mt-1"><div className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" style={{ backgroundColor: activeForm?.status === 'active' ? '#10b981' : '#e5e7eb' }} onClick={handleFormStatusToggle}><span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${activeForm?.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} /></div><span className={`text-[10px] font-bold uppercase tracking-wider ${activeForm?.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`}>{activeForm?.status === 'active' ? 'Active' : 'Draft'}</span><div className="h-4 w-px bg-gray-300 mx-1"></div><span className="text-xs text-gray-400 font-mono flex items-center gap-1 truncate max-w-[150px] sm:max-w-[300px]"><LinkIcon className="h-3 w-3 flex-shrink-0" />{activeForm?.webhookUrl}</span><button onClick={() => copyToClipboard(activeForm?.webhookUrl || '')} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400" title="Copy Webhook URL"><Copy className="h-3.5 w-3.5" /></button><button onClick={handleRegenerateWebhookKey} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400 ml-1" title="Regenerate Key"><RefreshCcw className="h-3.5 w-3.5" /></button></div></div>
                             </div>
-                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0"><div className="flex bg-gray-200/50 p-1 rounded-lg"><button onClick={() => setFormViewMode('overview')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'overview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Submissions</button><button onClick={() => setFormViewMode('builder')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'builder' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Form Builder</button><button onClick={() => setFormViewMode('mapping')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${formViewMode === 'mapping' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Map Fields</button></div></div>
+                            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                                <div className="flex bg-gray-200/50 p-1.5 rounded-xl">
+                                    <button onClick={() => setFormViewMode('overview')} className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${formViewMode === 'overview' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Submissions</button>
+                                    {canEditSchema && (
+                                        <>
+                                            <button onClick={() => setFormViewMode('builder')} className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${formViewMode === 'builder' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Form Builder</button>
+                                            <button onClick={() => setFormViewMode('mapping')} className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${formViewMode === 'mapping' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Map Fields</button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                         <div className="flex-1 bg-gray-50/30 overflow-hidden flex flex-col relative h-full">
                             {/* ... Content bodies (builder, mapping, overview) ... */}
-                            {formViewMode === 'builder' && (
+                            {formViewMode === 'builder' && canEditSchema && (
                                 <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
                                     <div className="flex-1 lg:w-2/3 flex flex-col min-h-0 overflow-y-auto p-6 md:p-8 space-y-4">
                                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Form Structure</h3>
@@ -747,7 +760,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                     </div>
                                 </div>
                             )}
-                            {formViewMode === 'mapping' && (
+                            {formViewMode === 'mapping' && canEditSchema && (
                                 <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
                                     <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 overflow-hidden bg-gray-50/50 border-r border-gray-200 order-2 lg:order-1">
                                         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white"><h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Field Mapping</h3><Button onClick={handleExplicitSaveMapping} className="h-8 text-xs" isLoading={isProcessingAction}><Save className="h-3 w-3 mr-2" />Save Configuration</Button></div>
@@ -779,7 +792,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                     </div>
                                 </div>
                             )}
-                            {formViewMode === 'overview' && (
+                            {(formViewMode === 'overview' || !canEditSchema) && (
                                 <div className="flex flex-col lg:flex-row h-full overflow-hidden">
                                     <div className="w-full lg:w-[400px] border-r border-gray-200 bg-white flex-shrink-0 flex flex-col">
                                         <div className="p-4 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 backdrop-blur-sm"><h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Submitted Data</h3></div>
@@ -849,7 +862,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                                 )}
                                                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-6">
                                                     <Button variant="danger" onClick={() => setIsDeleteRecordModalOpen(true)} className="text-xs">Delete Record</Button>
-                                                    <Button className="text-xs" onClick={() => setFormViewMode('mapping')}><Settings className="w-3.5 h-3.5 mr-2" />Configure Mapping</Button>
+                                                    {canEditSchema && <Button className="text-xs" onClick={() => setFormViewMode('mapping')}><Settings className="w-3.5 h-3.5 mr-2" />Configure Mapping</Button>}
                                                 </div>
                                             </div>
                                         ) : (
@@ -876,7 +889,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                     key={folder.id} 
                                     onClick={() => setCurrentFolderId(folder.id)} 
                                     exit="exit"
-                                    className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] ${selectedItems.has(folder.id) ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50/10' : 'border-gray-200 hover:border-indigo-200'}`}
+                                    className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] min-w-0 ${selectedItems.has(folder.id) ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50/10' : 'border-gray-200 hover:border-indigo-200'}`}
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="ml-auto z-10">
@@ -889,7 +902,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                         <div className="absolute -top-12 -left-2 p-3 bg-indigo-50 rounded-2xl group-hover:scale-110 transition-transform">
                                             <Folder className={`h-8 w-8 ${selectedItems.has(folder.id) ? 'text-indigo-600' : 'text-indigo-500'}`} />
                                         </div>
-                                        <div className="mt-6">
+                                        <div className="mt-6 min-w-0">
                                             <h3 className="text-xl font-bold text-gray-900 truncate tracking-tight">{folder.name}</h3>
                                             <p className="text-sm text-gray-500 mt-1 font-medium">{folders.filter(f => f.parentId === folder.id).length} sub-folders</p>
                                         </div>
@@ -908,29 +921,29 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                             key={cred.id} 
                                             onClick={() => canMutate && setEditingId(cred.id)}
                                             exit="exit"
-                                            className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[220px] ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
+                                            className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[220px] min-w-0 ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
                                         >
                                             <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
                                                 <div onClick={(e) => toggleSelection(cred.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(cred.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
                                                     <Check size={16} strokeWidth={3} />
                                                 </div>
                                             </div>
-                                            <div className="p-6 flex flex-col h-full">
+                                            <div className="p-6 flex flex-col h-full min-w-0">
                                                 <div className="flex items-start justify-between mb-4 pr-10">
                                                     <div className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.bg} ${style.text} ${style.border}`}>
                                                         {cred.serviceName || 'Service'}
                                                     </div>
                                                 </div>
                                                 
-                                                <h3 className="font-bold text-gray-900 truncate text-lg mb-4 flex items-center gap-2 group-hover:text-indigo-600 transition-colors">
-                                                    {cred.clientName}
+                                                <h3 className="font-bold text-gray-900 truncate text-lg mb-4 flex items-center gap-2 group-hover:text-indigo-600 transition-colors min-w-0">
+                                                    <span className="truncate">{cred.clientName}</span>
                                                     {cred.crmLink && (
                                                         <a 
                                                             href={cred.crmLink} 
                                                             target="_blank" 
                                                             rel="noopener noreferrer" 
                                                             onClick={(e) => e.stopPropagation()}
-                                                            className="text-gray-400 hover:text-indigo-600 transition-colors p-1"
+                                                            className="text-gray-400 hover:text-indigo-600 transition-colors p-1 flex-shrink-0"
                                                             title="Open Link"
                                                         >
                                                             <ExternalLink size={14} />
@@ -938,31 +951,31 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                                     )}
                                                 </h3>
                                                 
-                                                <div className="space-y-2 flex-1">
+                                                <div className="space-y-2 flex-1 min-w-0">
                                                     <div 
                                                         onClick={(e) => copyToClipboard(cred.username, e)}
-                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100"
+                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100 min-w-0"
                                                         title="Click to copy"
                                                     >
-                                                        <UserIcon size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500" />
+                                                        <UserIcon size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500 flex-shrink-0" />
                                                         <span className="truncate flex-1 font-medium">{cred.username}</span>
-                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0" />
+                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0 flex-shrink-0" />
                                                     </div>
                                                     <div 
                                                         onClick={(e) => copyToClipboard(cred.password, e)}
-                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100"
+                                                        className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100 min-w-0"
                                                         title="Click to copy"
                                                     >
-                                                        <Lock size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500" />
+                                                        <Lock size={14} className="mr-2 text-gray-400 group-hover/row:text-indigo-500 flex-shrink-0" />
                                                         <span className="truncate flex-1 font-mono text-xs">••••••••••••</span>
-                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0" />
+                                                        <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0 flex-shrink-0" />
                                                     </div>
                                                 </div>
 
-                                                <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
-                                                    <span>Updated: {new Date(cred.lastUpdated).toLocaleDateString()}</span>
+                                                <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400 min-w-0">
+                                                    <span className="truncate">Updated: {new Date(cred.lastUpdated).toLocaleDateString()}</span>
                                                     {canMutate && (
-                                                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                                                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                                           <button onClick={() => setEditingId(cred.id)} className="hover:text-indigo-600 transition-colors p-1"><Pencil size={14} /></button>
                                                           <button onClick={() => setDeleteConfirmation({ isOpen: true, id: cred.id, type: 'credential' })} className="hover:text-rose-600 transition-colors p-1"><Trash2 size={14} /></button>
                                                       </div>
@@ -979,20 +992,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                             key={form.id} 
                                             onClick={() => setCurrentFormId(form.id)} 
                                             exit="exit"
-                                            className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] ${selectedItems.has(form.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
+                                            className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] min-w-0 ${selectedItems.has(form.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
                                         >
                                              <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
                                                 <div onClick={(e) => toggleSelection(form.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(form.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
                                                     <Check size={16} strokeWidth={3} />
                                                 </div>
                                             </div>
-                                            <div>
+                                            <div className="min-w-0">
                                                 <div className="flex justify-between items-start mb-4">
                                                     <div className={`p-3 rounded-2xl ${selectedItems.has(form.id) ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500 group-hover:bg-indigo-50 group-hover:text-indigo-500'} transition-colors`}>
                                                         <LayoutTemplate className="h-6 w-6" />
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center justify-between mb-1">
+                                                <div className="flex items-center justify-between mb-1 min-w-0">
                                                     <h3 className="text-xl font-bold text-gray-900 truncate">{form.name}</h3>
                                                 </div>
                                                 <div className="flex items-center mt-2">
@@ -1002,10 +1015,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
-                                                <p className="text-xs text-gray-400 font-medium">Created {new Date(form.createdAt).toLocaleDateString()}</p>
+                                            <div className="pt-4 border-t border-gray-100 flex justify-between items-center min-w-0">
+                                                <p className="text-xs text-gray-400 font-medium truncate">Created {new Date(form.createdAt).toLocaleDateString()}</p>
                                                 {canMutate && (
-                                                    <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ isOpen: true, id: form.id, type: 'form' }); }} className="text-gray-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><Trash2 size={16} /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ isOpen: true, id: form.id, type: 'form' }); }} className="text-gray-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0"><Trash2 size={16} /></button>
                                                 )}
                                             </div>
                                         </motion.div>

@@ -9,7 +9,8 @@ export interface User {
 export interface ChatMessage {
   id: string;
   user_id: string;
-  username: string; // Display name
+  username: string; // This usually holds the email/handle
+  full_name?: string; // Added display name
   content: string;
   created_at: string;
   role?: string; // Optional role for styling

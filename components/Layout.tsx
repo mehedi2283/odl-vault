@@ -28,18 +28,21 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
 
   const getRoleLabel = () => {
     if (user?.role === 'grand_admin') return 'Grand Administrator';
+    if (user?.role === 'master_admin') return 'Master Administrator';
     if (user?.role === 'admin') return 'Administrator';
-    return 'Authorized User';
+    return 'Operative';
   };
 
   const getRoleColor = () => {
     if (user?.role === 'grand_admin') return 'text-amber-400';
+    if (user?.role === 'master_admin') return 'text-blue-400';
     if (user?.role === 'admin') return 'text-indigo-400';
     return 'text-emerald-400';
   };
 
   const getRoleBg = () => {
     if (user?.role === 'grand_admin') return 'bg-amber-400';
+    if (user?.role === 'master_admin') return 'bg-blue-400';
     if (user?.role === 'admin') return 'bg-indigo-400';
     return 'bg-emerald-400';
   };
@@ -49,7 +52,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
   return (
     <div className="h-screen bg-gray-50 flex font-sans text-gray-900 overflow-hidden">
       <CommandPalette onLogout={onLogout} />
-      {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={1} />}
+      {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={10} />}
       <StealthMode />
 
       {/* Mobile Sidebar Overlay */}
