@@ -333,10 +333,31 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         };
         
         // Notification Logic
-        if (user.id !== payload.new.user_id) {
-           playNotificationSound();
-           sendSystemNotification(data?.full_name || data?.username || 'Secure Channel', payload.new.content);
-        }
+        if (
+  user.id !== payload.new.user_id &&
+  document.hidden
+) {
+   playNotificationSound();
+   sendSystemNotification(
+     data?.full_name || data?.username || 'Secure Channel',
+     payload.new.content
+   );
+}
+
+const shouldNotify = document.hidden || !document.hasFocus();
+
+if (
+  user.id !== payload.new.user_id &&
+  shouldNotify
+) {
+  playNotificationSound();
+  sendSystemNotification(
+    data?.full_name || data?.username || 'Secure Channel',
+    payload.new.content
+  );
+}
+
+
 
         setMessages(prev => {
             if (prev.some(msg => msg.id === newMessage.id)) return prev;
