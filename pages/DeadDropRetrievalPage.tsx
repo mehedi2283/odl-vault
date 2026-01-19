@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Eye, Lock, Loader2, FileWarning, Unlock, ShieldCheck, Terminal } from 'lucide-react';
+import { Flame, Lock, Loader2, FileWarning, Unlock, ShieldCheck, Terminal, MousePointer2, EyeOff, Ban } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 // --- CRYPTO UTILS ---
-const decryptMessage = async (ciphertextB64: string, ivB64: string, keyB64: string) => {
+const decryptPayload = async (ciphertextB64: string, ivB64: string, keyB64: string) => {
     try {
         const keyBytes = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
         const key = await window.crypto.subtle.importKey(
@@ -25,7 +25,19 @@ const decryptMessage = async (ciphertextB64: string, ivB64: string, keyB64: stri
             ciphertext
         );
 
-        return new TextDecoder().decode(decrypted);
+        const decryptedString = new TextDecoder().decode(decrypted);
+        
+        // Try parsing as JSON (New Format) or fallback to string (Legacy)
+        try {
+            const json = JSON.parse(decryptedString);
+            if (json && typeof json === 'object' && 'content' in json) {
+                return json; // { content: "...", options: { allowCopy: boolean } }
+            }
+            return { content: decryptedString, options: { allowCopy: true } };
+        } catch (e) {
+            return { content: decryptedString, options: { allowCopy: true } };
+        }
+
     } catch (e) {
         console.error("Decryption failed", e);
         throw new Error("Decryption key invalid or payload corrupted.");
@@ -34,31 +46,39 @@ const decryptMessage = async (ciphertextB64: string, ivB64: string, keyB64: stri
 
 const DeadDropRetrievalPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
   const [status, setStatus] = useState<'locked' | 'decrypting' | 'revealed' | 'error'>('locked');
   const [content, setContent] = useState<string | null>(null);
+  const [options, setOptions] = useState<{ allowCopy: boolean }>({ allowCopy: true });
   const [errorMessage, setErrorMessage] = useState<string>('');
-
-  // Extract key from hash (it comes after the second # usually if hash router is used improperly, 
-  // or simply check the last part of the hash if we are careful)
-  // In HashRouter: #/pickup/<id>#<key> -> location.hash might be tricky.
-  // Actually, standard window.location.hash in HashRouter might treat the whole thing as the path.
-  // We need to parse the custom format we created: /pickup/id#key
   
+  // Security States
+  const [isRevealed, setIsRevealed] = useState(false);
+  const [isWindowBlurred, setIsWindowBlurred] = useState(false);
+
+  // Detect Window Blur for Anti-Screenshot/Privacy
+  useEffect(() => {
+      const handleBlur = () => setIsWindowBlurred(true);
+      const handleFocus = () => setIsWindowBlurred(false);
+      window.addEventListener('blur', handleBlur);
+      window.addEventListener('focus', handleFocus);
+      return () => {
+          window.removeEventListener('blur', handleBlur);
+          window.removeEventListener('focus', handleFocus);
+      };
+  }, []);
+
+  // Prevent Context Menu
+  useEffect(() => {
+      const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+      document.addEventListener('contextmenu', handleContextMenu);
+      return () => document.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
   const getKeyFromUrl = () => {
-      // The browser URL is like: http://.../#/pickup/abc-123#KEY_HERE
-      // React Router sees pathname: /pickup/abc-123
-      // The `location.hash` from react-router might contain the key if it's treated as a hash on the route
-      // BUT `location` object from `useLocation` only gives us the route part.
-      // We need native window.location to find the *second* hash or the end part.
-      
-      const fullHash = window.location.hash; // "#/pickup/uuid#key"
+      const fullHash = window.location.hash; 
       const parts = fullHash.split('#');
-      // parts[0] is usually empty
-      // parts[1] is "/pickup/uuid"
-      // parts[2] is "key"
       if (parts.length >= 3) {
-          return parts[parts.length - 1]; // The last part is our key
+          return parts[parts.length - 1]; 
       }
       return null;
   };
@@ -76,7 +96,6 @@ const DeadDropRetrievalPage: React.FC = () => {
     setStatus('decrypting');
 
     try {
-      // 1. Fetch encrypted data
       const { data, error } = await supabase
         .from('dead_drops')
         .select('*')
@@ -87,18 +106,15 @@ const DeadDropRetrievalPage: React.FC = () => {
           throw new Error("Payload not found. It has likely been incinerated.");
       }
 
-      // 2. Decrypt locally
       if (!data.encrypted_content || !data.iv) {
           throw new Error("Legacy format unsupported or data corrupted.");
       }
 
-      const decryptedText = await decryptMessage(data.encrypted_content, data.iv, keyString);
-      setContent(decryptedText);
+      const result = await decryptPayload(data.encrypted_content, data.iv, keyString);
+      setContent(result.content);
+      setOptions(result.options || { allowCopy: true });
       setStatus('revealed');
 
-      // 3. Burn if required
-      // We check if the column exists in the data returned. If undefined, we assume false or check logic.
-      // If 'burn_after_read' is true, we delete.
       if (data.burn_after_read === true) {
           await supabase.from('dead_drops').delete().eq('id', id);
       }
@@ -110,13 +126,24 @@ const DeadDropRetrievalPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-gray-200 flex flex-col items-center justify-center p-4 relative overflow-hidden font-mono selection:bg-orange-500/30">
+    <div className={`min-h-screen bg-[#09090b] text-gray-200 flex flex-col items-center justify-center p-4 relative overflow-hidden font-mono transition-all duration-300 ${isWindowBlurred ? 'blur-xl grayscale' : ''}`}>
       
       {/* Grid Background */}
-      <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#27272a_1px,transparent_1px),linear-gradient(to_bottom,#27272a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20"></div>
+      <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#27272a_1px,transparent_1px),linear-gradient(to_bottom,#27272a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20 pointer-events-none"></div>
       
       {/* Top Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-orange-600/10 blur-[100px] rounded-full pointer-events-none"></div>
+
+      {/* Privacy Shield Overlay */}
+      {isWindowBlurred && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md">
+              <div className="text-center">
+                  <EyeOff className="w-16 h-16 text-zinc-500 mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-white">Privacy Shield Active</h2>
+                  <p className="text-zinc-500">Focus window to resume</p>
+              </div>
+          </div>
+      )}
 
       <div className="relative z-10 w-full max-w-xl">
           <div className="text-center mb-10">
@@ -187,26 +214,51 @@ const DeadDropRetrievalPage: React.FC = () => {
                     animate={{ opacity: 1, scale: 1 }}
                     className="bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10"
                   >
-                      <div className="bg-zinc-900 px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                      <div className="bg-zinc-900 px-6 py-4 border-b border-zinc-800 flex items-center justify-between select-none">
                           <div className="flex items-center gap-2">
                               <ShieldCheck className="w-4 h-4 text-emerald-500" />
                               <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Decryption Successful</span>
                           </div>
-                          <button 
-                             onClick={() => navigator.clipboard.writeText(content || "")}
-                             className="text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors uppercase"
-                          >
-                             Copy Data
-                          </button>
+                          {options.allowCopy ? (
+                              <button 
+                                 onClick={() => navigator.clipboard.writeText(content || "")}
+                                 className="text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors uppercase flex items-center gap-2"
+                              >
+                                 Copy Data
+                              </button>
+                          ) : (
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-500 bg-rose-950/20 px-3 py-1.5 rounded-lg border border-rose-900/50">
+                                  <Ban className="w-3 h-3" /> No Copy
+                              </div>
+                          )}
                       </div>
                       
-                      <div className="p-8 overflow-x-auto">
-                          <pre className="font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed selection:bg-emerald-500/30">
-                              {content}
-                          </pre>
+                      <div className="relative group">
+                          {/* Screenshot Protection Overlay */}
+                          <div 
+                             className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/10 backdrop-blur-xl transition-opacity duration-200 select-none cursor-crosshair ${isRevealed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                             onMouseDown={() => setIsRevealed(true)}
+                             onMouseUp={() => setIsRevealed(false)}
+                             onMouseLeave={() => setIsRevealed(false)}
+                             onTouchStart={() => setIsRevealed(true)}
+                             onTouchEnd={() => setIsRevealed(false)}
+                          >
+                              <div className="bg-zinc-900 p-4 rounded-full mb-4 shadow-lg border border-zinc-800">
+                                  <MousePointer2 className="w-8 h-8 text-zinc-400" />
+                              </div>
+                              <p className="text-sm font-bold text-zinc-300 uppercase tracking-widest">Hold to Reveal</p>
+                              <p className="text-[10px] text-zinc-600 mt-2">Anti-Capture Protocol Active</p>
+                          </div>
+
+                          {/* Content Area */}
+                          <div className={`p-8 overflow-x-auto min-h-[200px] transition-all duration-300 ${isRevealed ? 'filter-none' : 'blur-md opacity-50'}`}>
+                              <pre className={`font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed ${options.allowCopy ? 'selection:bg-emerald-500/30' : 'select-none'}`}>
+                                  {content}
+                              </pre>
+                          </div>
                       </div>
 
-                      <div className="bg-zinc-900/50 p-4 border-t border-zinc-800/50 text-center">
+                      <div className="bg-zinc-900/50 p-4 border-t border-zinc-800/50 text-center select-none">
                           <p className="text-[10px] text-orange-500/60 font-mono uppercase tracking-widest flex items-center justify-center gap-2">
                               <Flame className="w-3 h-3" />
                               <span>Server Record Purged</span>
