@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Lock, Loader2, FileWarning, Unlock, ShieldCheck, Terminal, MousePointer2, EyeOff, Ban } from 'lucide-react';
+import { Flame, Lock, Loader2, FileWarning, Unlock, ShieldCheck, Terminal, MousePointer2, EyeOff, Ban, Fingerprint } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import Toast from '../components/Toast';
 
@@ -57,8 +57,9 @@ const DeadDropRetrievalPage: React.FC = () => {
   const [isWindowBlurred, setIsWindowBlurred] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
-  // Refs for precise touch tracking
+  // Refs for precise touch tracking and motion detection
   const revealContainerRef = useRef<HTMLDivElement>(null);
+  const decayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 1. ADVANCED SECURITY LISTENERS (Blur, Keys, Resize)
   useEffect(() => {
@@ -97,7 +98,10 @@ const DeadDropRetrievalPage: React.FC = () => {
 
   // 2. Global Release & Select Blocking
   useEffect(() => {
-      const handleRelease = () => setIsRevealed(false);
+      const handleRelease = () => {
+          setIsRevealed(false);
+          if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+      };
       const handleSelectStart = (e: Event) => e.preventDefault();
       
       window.addEventListener('mouseup', handleRelease);
@@ -196,15 +200,32 @@ const DeadDropRetrievalPage: React.FC = () => {
       }
   };
 
-  // Touch Handler to prevent Multi-touch (Anti-Screenshot Gesture)
-  const handleTouchStart = (e: React.TouchEvent) => {
-      // If more than 1 finger is touching (e.g. 3-finger screenshot, or holding phone with one hand and tapping with other)
-      if (e.touches.length > 1) {
+  // --- MOTION DETECTION LOGIC ---
+  // To prevent screenshots via hardware buttons (Power + Volume), we enforce continuous motion.
+  // Taking a screenshot usually requires stabilizing the device, which stops the finger.
+  
+  const resetDecayTimer = () => {
+      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+      // If movement stops for 250ms, hide content immediately.
+      decayTimerRef.current = setTimeout(() => {
+          setIsRevealed(false);
+      }, 250);
+  };
+
+  const handleMotionStart = (e: React.MouseEvent | React.TouchEvent) => {
+      // Prevent multi-touch screenshots
+      if ('touches' in e && e.touches.length > 1) {
           setIsRevealed(false);
           setToast({ message: "Security Protocol: Single touch only.", type: 'error' });
           return;
       }
       setIsRevealed(true);
+      resetDecayTimer();
+  };
+
+  const handleMotionActive = () => {
+      if (!isRevealed) setIsRevealed(true);
+      resetDecayTimer();
   };
 
   return (
@@ -324,21 +345,27 @@ const DeadDropRetrievalPage: React.FC = () => {
                       <div 
                         ref={revealContainerRef}
                         className="relative group select-none touch-none"
-                        onMouseDown={() => setIsRevealed(true)}
-                        onTouchStart={handleTouchStart}
-                        // Mouse leaves/ups are handled by global listeners in useEffect, 
-                        // but added here for redundancy
-                        onMouseLeave={() => setIsRevealed(false)} 
+                        onMouseDown={handleMotionStart}
+                        onMouseMove={handleMotionActive}
+                        onTouchStart={handleMotionStart}
+                        onTouchMove={handleMotionActive}
+                        // Stop if interaction ends
+                        onMouseUp={() => setIsRevealed(false)}
+                        onMouseLeave={() => setIsRevealed(false)}
+                        onTouchEnd={() => setIsRevealed(false)}
+                        onTouchCancel={() => setIsRevealed(false)}
                       >
                           {/* Hold-to-Reveal Overlay */}
                           <div 
                              className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/20 backdrop-blur-xl transition-opacity duration-75 cursor-crosshair ${isRevealed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
                           >
-                              <div className="bg-zinc-900 p-4 rounded-full mb-4 shadow-lg border border-zinc-800 pointer-events-none">
-                                  <MousePointer2 className="w-8 h-8 text-zinc-400" />
+                              <div className="bg-zinc-900 p-4 rounded-full mb-4 shadow-lg border border-zinc-800 pointer-events-none animate-pulse">
+                                  <Fingerprint className="w-8 h-8 text-zinc-400" />
                               </div>
-                              <p className="text-sm font-bold text-zinc-300 uppercase tracking-widest pointer-events-none">Hold to Reveal</p>
-                              <p className="text-[10px] text-zinc-600 mt-2 pointer-events-none">Anti-Capture Protocol Active</p>
+                              <p className="text-sm font-bold text-zinc-300 uppercase tracking-widest pointer-events-none">Keep Moving to Reveal</p>
+                              <p className="text-[10px] text-zinc-500 mt-2 pointer-events-none max-w-[200px] text-center">
+                                  Continuous motion required to decrypt visual layer.
+                              </p>
                           </div>
 
                           {/* Content Area */}
