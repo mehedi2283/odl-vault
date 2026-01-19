@@ -369,7 +369,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
 
   // --- Render Helpers ---
   const getBubbleStyle = (role: string | undefined, userId: string, isMe: boolean) => {
-      if (isMe) return 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-600 shadow-sm';
+      if (isMe) {
+          // Special Gold Vibe for Grand Admin when it's "Me"
+          if (role === 'grand_admin') {
+              return 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md shadow-orange-500/20 border-transparent rounded-2xl rounded-tr-sm';
+          }
+          // Standard "Me" style
+          return 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm border-indigo-600 shadow-sm';
+      }
+      
+      // Styles for "Them"
       if (role === 'grand_admin') return 'bg-[#fffbeb] border-[#fcd34d] text-[#92400e] rounded-2xl rounded-tl-sm shadow-sm';
       if (role === 'master_admin') return 'bg-blue-50 border-blue-200 text-blue-900 rounded-2xl rounded-tl-sm shadow-sm';
       if (role === 'admin') return 'bg-violet-50 border-violet-200 text-violet-900 rounded-2xl rounded-tl-sm shadow-sm';
@@ -456,6 +465,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           const bubbleStyle = getBubbleStyle(msg.role, msg.user_id, isMe);
           const isUserOnline = onlineUsers.has(msg.user_id);
           
+          // Determine Text Color for Meta Info based on bubble type
+          const metaTextColor = isMe 
+            ? (msg.role === 'grand_admin' ? 'text-orange-100/90' : 'text-indigo-200') 
+            : (msg.role === 'grand_admin' ? 'text-amber-700/60' : 'opacity-50');
+
           // Date Grouping
           const dateLabel = getDateLabel(msg.created_at);
           const prevDateLabel = index > 0 ? getDateLabel(messages[index-1].created_at) : null;
@@ -502,7 +516,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                             {!isEditing ? (
                                 <>
                                     <div className="break-words font-medium whitespace-pre-wrap">{msg.content}</div>
-                                    <div className={`text-[9px] mt-1 text-right flex items-center justify-end gap-1 ${isMe ? 'text-indigo-200' : (msg.role === 'grand_admin' ? 'text-amber-700/60' : 'opacity-50')}`}>
+                                    <div className={`text-[9px] mt-1 text-right flex items-center justify-end gap-1 ${metaTextColor}`}>
                                         {msg.updated_at && (
                                             <span 
                                               className="italic opacity-80 mr-1" 

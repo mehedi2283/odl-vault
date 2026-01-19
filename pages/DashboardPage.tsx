@@ -11,7 +11,7 @@ import {
   LayoutTemplate, Clock, Hash, Database, ChevronUp, Tag, Code, Terminal,
   PlayCircle, PauseCircle, FileJson, Table as TableIcon, RefreshCw, AlertCircle,
   MoreHorizontal, AlertTriangle, ArrowRight, User as UserIcon, CheckCircle2,
-  ExternalLink, Check, MousePointerClick, Briefcase, Ban
+  ExternalLink, Check, MousePointerClick, Briefcase, Ban, Info
 } from 'lucide-react';
 import { AnimatePresence, motion, Variants } from 'framer-motion';
 import Button from '../components/Button';
@@ -19,7 +19,7 @@ import Input from '../components/Input';
 import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import CipherText from '../components/CipherText';
-import { StoredCredential, FormSubmission, User, Folder as FolderType } from '../types';
+import { StoredCredential, FormSubmission, User, Folder as FolderType, FormDefinition, CreatorProfile } from '../types';
 import { supabase } from '../services/supabase';
 
 // --- TYPES & CONSTANTS ---
@@ -31,17 +31,6 @@ interface FormField {
   name: string;
   type: FieldType;
   mappedKey?: string; 
-}
-
-interface FormDefinition {
-  id: string;
-  name: string;
-  folderId: string | null;
-  webhookKey: string; 
-  webhookUrl: string;
-  fields: FormField[];
-  createdAt: string;
-  status: 'draft' | 'active'; 
 }
 
 // Light Mode Colors for CRM Tags
@@ -103,6 +92,27 @@ interface DashboardPageProps {
   user: User | null;
 }
 
+// Helper Component for Metadata Footer
+const MetadataFooter = ({ createdBy, createdAt }: { createdBy?: CreatorProfile, createdAt?: string }) => {
+    if (!createdAt) return null;
+    return (
+        <div className="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+            <div className="flex items-center gap-1.5">
+                <Clock className="w-3 h-3" />
+                <span>Created {new Date(createdAt).toLocaleDateString()}</span>
+            </div>
+            {createdBy && (
+                <div className="flex items-center gap-1.5">
+                    <UserIcon className="w-3 h-3" />
+                    <span className="font-medium text-gray-500">
+                        {createdBy.full_name || createdBy.username || 'Unknown Agent'}
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const navigate = useNavigate();
   const [activeMainTab, setActiveMainTab] = useState<'credentials' | 'submissions'>('credentials');
@@ -158,7 +168,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   // --- MODAL STATES ---
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [isEditFolderModalOpen, setIsEditFolderModalOpen] = useState(false); // New Edit Folder Modal
   const [isCreateFormModalOpen, setIsCreateFormModalOpen] = useState(false);
+  const [isEditFormModalOpen, setIsEditFormModalOpen] = useState(false); // New Edit Form Modal
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteRecordModalOpen, setIsDeleteRecordModalOpen] = useState(false);
   const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
@@ -176,6 +188,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const [isCrmFilterOpen, setIsCrmFilterOpen] = useState(false);
   
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [newCred, setNewCred] = useState<Omit<StoredCredential, 'id' | 'lastUpdated'>>({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null });
   const [newFolderName, setNewFolderName] = useState('');
   const [showCrmDropdown, setShowCrmDropdown] = useState(false);
@@ -235,9 +248,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const fetchData = async () => {
     try {
       setIsLoadingData(true);
-      // Fetch Credentials
-      const { data: credsData, error: credsError } = await supabase.from('credentials').select('*').order('last_updated', { ascending: false });
+      
+      // Fetch Credentials with Profile
+      // Supabase Join syntax: select('*, profiles!created_by(username, full_name)')
+      // Note: We need to use the foreign key relation we created in SQL
+      const { data: credsData, error: credsError } = await supabase
+        .from('credentials')
+        .select(`
+            *,
+            profiles!created_by ( username, full_name )
+        `)
+        .order('last_updated', { ascending: false });
+
       if (credsError) throw credsError;
+      
       if (credsData) {
         setCredentials(credsData.map((item: any) => ({
           id: item.id,
@@ -247,24 +271,41 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           username: item.username || '',
           password: item.password || '',
           lastUpdated: new Date(item.last_updated),
-          folderId: item.folder_id || null
+          folderId: item.folder_id || null,
+          createdAt: item.created_at,
+          createdBy: item.profiles
         })));
       }
 
-      // Fetch Folders
-      const { data: foldersData } = await supabase.from('folders').select('*').order('name', { ascending: true });
+      // Fetch Folders with Profile
+      const { data: foldersData } = await supabase
+        .from('folders')
+        .select(`
+            *,
+            profiles!created_by ( username, full_name )
+        `)
+        .order('name', { ascending: true });
+        
       if (foldersData) {
         setFolders(foldersData.map((item: any) => ({
           id: item.id,
           name: item.name,
           parentId: item.parent_id,
           createdAt: item.created_at,
-          type: item.type // Fetch type from DB
+          type: item.type,
+          createdBy: item.profiles
         })));
       }
 
-      // Fetch Forms
-      const { data: formsData } = await supabase.from('forms').select('*').order('created_at', { ascending: false });
+      // Fetch Forms with Profile
+      const { data: formsData } = await supabase
+        .from('forms')
+        .select(`
+            *,
+            profiles!created_by ( username, full_name )
+        `)
+        .order('created_at', { ascending: false });
+        
       if (formsData) {
         setForms(formsData.map((f: any) => ({
           id: f.id,
@@ -274,7 +315,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           webhookUrl: `${BASE_WEBHOOK_URL}?key=${f.webhook_key}`,
           fields: f.fields || [],
           createdAt: f.created_at,
-          status: f.status || 'draft'
+          status: f.status || 'draft',
+          createdBy: f.profiles
         })));
       }
 
@@ -321,6 +363,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
   };
 
+  // ... (Helpers remain unchanged)
   useEffect(() => {
       setActiveFormSubmissions([]);
       setViewingSubmission(null);
@@ -328,8 +371,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       setMappingReferenceId(null);
       if (currentFormId) fetchFormSubmissions(currentFormId);
   }, [currentFormId]);
-
-  // --- HELPERS ---
+  
   const flattenPayload = (obj: any, prefix = ''): Record<string, any> => {
     let result: Record<string, any> = {};
     for (const key in obj) {
@@ -385,6 +427,36 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
     navigator.clipboard.writeText(text);
     setToast({ message: "Copied to clipboard", type: "success" });
   };
+  
+  // --- HELPERS FOR EDITING ---
+  const handleEditFolder = (folderId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const folder = folders.find(f => f.id === folderId);
+      if (folder) {
+          setEditingFolderId(folderId);
+          setNewFolderName(folder.name);
+          setIsEditFolderModalOpen(true);
+      }
+  };
+
+  const handleUpdateFolder = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newFolderName.trim() || !editingFolderId) return;
+      setIsProcessingAction(true);
+      try {
+          const { error } = await supabase.from('folders').update({ name: newFolderName }).eq('id', editingFolderId);
+          if (error) throw error;
+          setFolders(prev => prev.map(f => f.id === editingFolderId ? { ...f, name: newFolderName } : f));
+          setIsEditFolderModalOpen(false);
+          setNewFolderName('');
+          setEditingFolderId(null);
+          setToast({ message: "Folder updated", type: "success" });
+      } catch (err: any) {
+          setToast({ message: "Update failed", type: "error" });
+      } finally {
+          setIsProcessingAction(false);
+      }
+  };
 
   // --- ACTIONS ---
   const handleCreateFolder = async (e: React.FormEvent) => {
@@ -398,8 +470,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           const { data, error } = await supabase.from('folders').insert({
               name: newFolderName,
               parent_id: currentFolderId,
-              type: folderType
-          }).select().single();
+              type: folderType,
+              created_by: user?.id
+          }).select(`
+            *,
+            profiles!created_by ( username, full_name )
+          `).single();
 
           if (error) throw error;
 
@@ -409,7 +485,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                   name: data.name,
                   parentId: data.parent_id,
                   createdAt: data.created_at,
-                  type: data.type
+                  type: data.type,
+                  createdBy: data.profiles
               }]);
               setIsCreateFolderModalOpen(false);
               setNewFolderName('');
@@ -422,6 +499,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
   };
 
+  // ... (delete and bulk move actions unchanged)
   const confirmDelete = async () => {
     const { id, type } = deleteConfirmation;
     setIsProcessingAction(true);
@@ -500,7 +578,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
   };
 
-  // --- FILTERING & PAGINATION LOGIC ---
+  // ... (Pagination Logic) ...
   const availableCrms = useMemo(() => {
     const services = new Set(credentials.map(c => c.serviceName).filter(Boolean));
     return ['All', ...Array.from(services).sort()];
@@ -508,16 +586,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   
   const currentFolders = folders.filter(f => {
       const isCorrectType = activeMainTab === 'credentials' 
-          ? (f.type === 'credential' || !f.type) // Legacy support: null type shows in credentials
+          ? (f.type === 'credential' || !f.type) 
           : (f.type === 'form');
 
       if (searchQuery) return f.name.toLowerCase().includes(searchQuery.toLowerCase()) && isCorrectType;
       
       if (currentFolderId) {
-          // Inside a folder, we trust the parent/child relationship
           return f.parentId === currentFolderId;
       } else {
-          // Root Level: Must filter by type
           return f.parentId === null && isCorrectType;
       }
   });
@@ -557,8 +633,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   // --- SELECTION LOGIC ---
   const handleSelectAll = () => {
       const allVisibleIds = [...displayFolders, ...displayItems].map(i => i.id);
-      
-      // If all visible items are already selected, deselect them
       const allSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedItems.has(id));
       
       setSelectedItems(prev => {
@@ -572,7 +646,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       });
   };
 
-  // --- RENDERERS ---
+  // ... (Renderers like activeForm, PaginationControls, PayloadRenderer remain unchanged) ...
   const activeForm = forms.find(f => f.id === currentFormId);
   const computedMappedData = useMemo(() => {
       if (!viewingSubmission || !activeForm) return {};
@@ -615,8 +689,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
         </div>
     );
   };
-
-  // ... (Payload renderers remain unchanged)
+  
   const PayloadRenderer = ({ data, level = 0 }: { data: any, level?: number }) => {
       if (typeof data !== 'object' || data === null) return <span className="text-gray-800 break-words font-mono text-sm">{String(data)}</span>;
       return (
@@ -648,8 +721,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
             })}</div>
     );
   };
-  
-  // ... (Other handlers unchanged)
+
+  // ... (Other handlers like handleFormStatusToggle etc.) ...
   const handleFormStatusToggle = async () => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newStatus = form.status === 'active' ? 'draft' : 'active'; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: newStatus } : f)); try { await supabase.from('forms').update({ status: newStatus }).eq('id', currentFormId); setToast({ message: `Form ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, type: 'success' }); } catch (err) { setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: form.status } : f)); setToast({ message: "Failed to update status", type: "error" }); } };
   const handleRegenerateWebhookKey = async () => { if (!currentFormId) return; if (!window.confirm("Regenerating the key will break existing integrations. Continue?")) return; const newKey = crypto.randomUUID(); try { await supabase.from('forms').update({ webhook_key: newKey }).eq('id', currentFormId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, webhookKey: newKey, webhookUrl: `${BASE_WEBHOOK_URL}?key=${newKey}` } : f)); setToast({ message: "Webhook Key Regenerated", type: "success" }); } catch (err) { setToast({ message: "Failed to regenerate key", type: "error" }); } };
   const addFieldToForm = async (type: FieldType) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newField: FormField = { id: crypto.randomUUID(), name: `New ${type} field`, type, mappedKey: undefined }; const updatedFields = [...form.fields, newField]; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to save field", type: "error" }); } };
@@ -702,6 +775,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4 sticky top-0 bg-gray-50 z-30 py-4 -mt-4 px-1">
         <div><h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2"><CipherText text="ODL Vault" /></h1><p className="mt-1 text-gray-500">Secured Operation Data Layer</p></div>
+        {/* ... (Header Controls) ... */}
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
             {!currentFormId && (
                 <div className="relative group w-full md:w-64 lg:w-80 shadow-sm rounded-xl"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Search className="h-4 w-4 text-gray-400" /></div><input type="text" className="block w-full pl-10 pr-3 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder={activeMainTab === 'credentials' ? "Search secure records..." : "Search forms..."} value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} /></div>
@@ -722,7 +796,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                         <span className="max-w-[100px] truncate">{crmFilter === 'All' ? 'Filter CRM' : crmFilter}</span>
                         <ChevronDown className={`h-3 w-3 opacity-50 transition-transform ${isCrmFilterOpen ? 'rotate-180' : ''}`} />
                     </button>
-                    
+                    {/* ... CRM Dropdown body ... */}
                     <AnimatePresence>
                         {isCrmFilterOpen && (
                             <motion.div
@@ -785,11 +859,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                 {activeMainTab === 'submissions' && currentFormId ? (
                     // --- SINGLE FORM DETAIL VIEW ---
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-180px)] animate-fade-in-up">
-                        {/* (... existing Form Detail content kept as is for brevity ...) */}
+                        {/* Form Detail Header */}
                         <div className="border-b border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between bg-gray-50/50 gap-4 flex-shrink-0">
                             <div className="flex items-center gap-4 w-full md:w-auto">
                                 <button onClick={() => setCurrentFormId(null)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-gray-500 transition-all border border-transparent hover:border-gray-200 flex-shrink-0"><ChevronLeft className="h-5 w-5" /></button>
-                                <div className="min-w-0"><h2 className="text-xl font-bold text-gray-900 truncate">{activeForm?.name}</h2><div className="flex items-center gap-2 mt-1"><div className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" style={{ backgroundColor: activeForm?.status === 'active' ? '#10b981' : '#e5e7eb' }} onClick={handleFormStatusToggle}><span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${activeForm?.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} /></div><span className={`text-[10px] font-bold uppercase tracking-wider ${activeForm?.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`}>{activeForm?.status === 'active' ? 'Active' : 'Draft'}</span><div className="h-4 w-px bg-gray-300 mx-1"></div><span className="text-xs text-gray-400 font-mono flex items-center gap-1 truncate max-w-[150px] sm:max-w-[300px]"><LinkIcon className="h-3 w-3 flex-shrink-0" />{activeForm?.webhookUrl}</span><button onClick={() => copyToClipboard(activeForm?.webhookUrl || '')} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400" title="Copy Webhook URL"><Copy className="h-3.5 w-3.5" /></button><button onClick={handleRegenerateWebhookKey} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400 ml-1" title="Regenerate Key"><RefreshCcw className="h-3.5 w-3.5" /></button></div></div>
+                                <div className="min-w-0">
+                                    <h2 className="text-xl font-bold text-gray-900 truncate flex items-center gap-2">
+                                        {activeForm?.name}
+                                        {canMutate && (
+                                            <button 
+                                                onClick={() => { setEditingId(currentFormId); setNewFolderName(activeForm?.name || ''); setIsEditFormModalOpen(true); }}
+                                                className="text-gray-300 hover:text-indigo-600 p-1 rounded transition-colors"
+                                                title="Form Settings"
+                                            >
+                                                <Settings className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </h2>
+                                    <div className="flex items-center gap-2 mt-1"><div className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" style={{ backgroundColor: activeForm?.status === 'active' ? '#10b981' : '#e5e7eb' }} onClick={handleFormStatusToggle}><span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${activeForm?.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} /></div><span className={`text-[10px] font-bold uppercase tracking-wider ${activeForm?.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`}>{activeForm?.status === 'active' ? 'Active' : 'Draft'}</span><div className="h-4 w-px bg-gray-300 mx-1"></div><span className="text-xs text-gray-400 font-mono flex items-center gap-1 truncate max-w-[150px] sm:max-w-[300px]"><LinkIcon className="h-3 w-3 flex-shrink-0" />{activeForm?.webhookUrl}</span><button onClick={() => copyToClipboard(activeForm?.webhookUrl || '')} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400" title="Copy Webhook URL"><Copy className="h-3.5 w-3.5" /></button><button onClick={handleRegenerateWebhookKey} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400 ml-1" title="Regenerate Key"><RefreshCcw className="h-3.5 w-3.5" /></button></div>
+                                </div>
                             </div>
                             <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
                                 <div className="flex bg-gray-200/50 p-1.5 rounded-xl">
@@ -804,9 +892,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                             </div>
                         </div>
                         <div className="flex-1 bg-gray-50/30 overflow-hidden flex flex-col relative h-full">
-                            {/* ... Content bodies (builder, mapping, overview) ... */}
+                            {/* ... Content bodies ... */}
                             {formViewMode === 'builder' && canEditSchema && (
                                 <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
+                                     {/* ... Builder code same ... */}
                                     <div className="flex-1 lg:w-2/3 flex flex-col min-h-0 overflow-y-auto p-6 md:p-8 space-y-4">
                                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Form Structure</h3>
                                         {activeForm?.fields.length === 0 && <div className="text-center p-8 border-2 border-dashed border-gray-200 rounded-xl text-gray-400"><LayoutTemplate className="h-10 w-10 mx-auto mb-2 opacity-20" /><p>No fields defined yet.</p></div>}
@@ -824,8 +913,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                 </div>
                             )}
                             {formViewMode === 'mapping' && canEditSchema && (
+                                 // ... Mapping code same ...
                                 <div className="w-full h-full flex flex-col lg:flex-row overflow-hidden">
-                                    <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 overflow-hidden bg-gray-50/50 border-r border-gray-200 order-2 lg:order-1">
+                                     <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 overflow-hidden bg-gray-50/50 border-r border-gray-200 order-2 lg:order-1">
                                         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white"><h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Field Mapping</h3><Button onClick={handleExplicitSaveMapping} className="h-8 text-xs" isLoading={isProcessingAction}><Save className="h-3 w-3 mr-2" />Save Configuration</Button></div>
                                         <div className="overflow-y-auto p-6 space-y-3 flex-1">
                                             {activeForm?.fields.map(field => {
@@ -841,6 +931,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                         </div>
                                     </div>
                                     <div className="flex-1 lg:w-1/2 flex flex-col min-h-0 bg-white order-1 lg:order-2">
+                                         {/* ... Mapping Right Panel ... */}
                                         <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                                             <div><h3 className="text-sm font-bold text-gray-800">Inbound Data</h3><p className="text-[10px] text-gray-500 mt-0.5">Reference Payload</p></div>
                                             <div className="flex items-center gap-2 relative" ref={submissionDropdownRef}>
@@ -857,6 +948,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                             )}
                             {(formViewMode === 'overview' || !canEditSchema) && (
                                 <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+                                     {/* ... Overview code ... */}
                                     <div className="w-full lg:w-[400px] border-r border-gray-200 bg-white flex-shrink-0 flex flex-col">
                                         <div className="p-4 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 backdrop-blur-sm"><h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Submitted Data</h3></div>
                                         <div className="flex-1 overflow-y-auto">
@@ -955,7 +1047,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                     className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] min-w-0 ${selectedItems.has(folder.id) ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50/10' : 'border-gray-200 hover:border-indigo-200'}`}
                                 >
                                     <div className="flex items-start justify-between">
-                                        <div className="ml-auto z-10">
+                                        <div className="ml-auto z-10 flex gap-2">
+                                           {canMutate && (
+                                                <div onClick={(e) => handleEditFolder(folder.id, e)} className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 flex items-center justify-center transition-colors text-gray-400" title="Folder Settings">
+                                                    <Settings size={14} />
+                                                </div>
+                                           )}
                                            <div onClick={(e) => toggleSelection(folder.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(folder.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>
                                               <Check size={16} strokeWidth={3} />
                                            </div>
@@ -991,6 +1088,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                                     <Check size={16} strokeWidth={3} />
                                                 </div>
                                             </div>
+                                            {/* ... Credential Card Content ... */}
                                             <div className="p-6 flex flex-col h-full min-w-0">
                                                 <div className="flex items-start justify-between mb-4 pr-10">
                                                     <div className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.bg} ${style.text} ${style.border}`}>
@@ -1119,6 +1217,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           </form>
       </Modal>
 
+      {/* Edit Folder Modal */}
+      <Modal isOpen={isEditFolderModalOpen} onClose={() => { setIsEditFolderModalOpen(false); setEditingFolderId(null); setNewFolderName(''); }} title="Folder Settings">
+          <form onSubmit={handleUpdateFolder}>
+              <Input label="Folder Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} autoFocus />
+              {/* Metadata Display */}
+              {editingFolderId && (
+                  <MetadataFooter 
+                      createdAt={folders.find(f => f.id === editingFolderId)?.createdAt} 
+                      createdBy={folders.find(f => f.id === editingFolderId)?.createdBy} 
+                  />
+              )}
+              <div className="mt-6 flex justify-between gap-3 items-center">
+                  <Button type="button" variant="danger" className="mr-auto" onClick={() => { setDeleteConfirmation({ isOpen: true, id: editingFolderId, type: 'folder' }); setIsEditFolderModalOpen(false); }}>Delete Folder</Button>
+                  <div className="flex gap-2">
+                     <Button type="button" variant="secondary" onClick={() => setIsEditFolderModalOpen(false)}>Cancel</Button>
+                     <Button type="submit" isLoading={isProcessingAction}>Save Changes</Button>
+                  </div>
+              </div>
+          </form>
+      </Modal>
+
       {/* Create Form Modal */}
       <Modal isOpen={isCreateFormModalOpen} onClose={() => setIsCreateFormModalOpen(false)} title="Initiate Form Protocol">
           <form onSubmit={async (e) => {
@@ -1126,9 +1245,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
               if (!newFolderName.trim()) return; 
               setIsProcessingAction(true);
               try {
-                  const { data, error } = await supabase.from('forms').insert({ name: newFolderName, folder_id: currentFolderId, status: 'draft' }).select().single();
+                  const { data, error } = await supabase.from('forms').insert({ name: newFolderName, folder_id: currentFolderId, status: 'draft', created_by: user?.id }).select(`
+                      *,
+                      profiles!created_by ( username, full_name )
+                  `).single();
                   if (error) throw error;
-                  setForms(prev => [{ id: data.id, name: data.name, folderId: data.folder_id, webhookKey: data.webhook_key, webhookUrl: `${BASE_WEBHOOK_URL}?key=${data.webhook_key}`, fields: [], createdAt: data.created_at, status: 'draft' }, ...prev]);
+                  setForms(prev => [{ id: data.id, name: data.name, folderId: data.folder_id, webhookKey: data.webhook_key, webhookUrl: `${BASE_WEBHOOK_URL}?key=${data.webhook_key}`, fields: [], createdAt: data.created_at, status: 'draft', createdBy: data.profiles }, ...prev]);
                   setIsCreateFormModalOpen(false);
                   setNewFolderName('');
                   setCurrentFormId(data.id);
@@ -1138,6 +1260,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
               <Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Client Intake V1" autoFocus />
               <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Initialize Form</Button></div>
           </form>
+      </Modal>
+
+      {/* Edit Form Modal (For Metadata viewing & Renaming) */}
+      <Modal isOpen={isEditFormModalOpen} onClose={() => { setIsEditFormModalOpen(false); setEditingId(null); setNewFolderName(''); }} title="Form Settings">
+           <form onSubmit={async (e) => {
+               e.preventDefault();
+               if (!newFolderName.trim() || !editingId) return;
+               setIsProcessingAction(true);
+               try {
+                   const { error } = await supabase.from('forms').update({ name: newFolderName }).eq('id', editingId);
+                   if (error) throw error;
+                   setForms(prev => prev.map(f => f.id === editingId ? { ...f, name: newFolderName } : f));
+                   setIsEditFormModalOpen(false);
+                   setToast({ message: "Form updated", type: "success" });
+               } catch (err) { setToast({ message: "Update failed", type: "error" }); } finally { setIsProcessingAction(false); }
+           }}>
+               <Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} autoFocus />
+               {editingId && (
+                  <MetadataFooter 
+                      createdAt={forms.find(f => f.id === editingId)?.createdAt} 
+                      createdBy={forms.find(f => f.id === editingId)?.createdBy} 
+                  />
+               )}
+               <div className="mt-6 flex justify-end gap-3">
+                   <Button type="button" variant="secondary" onClick={() => setIsEditFormModalOpen(false)}>Cancel</Button>
+                   <Button type="submit" isLoading={isProcessingAction}>Save Changes</Button>
+               </div>
+           </form>
       </Modal>
       
       {/* Mapping Key Modal */}
@@ -1205,9 +1355,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                        if (error) throw error;
                        setCredentials(prev => prev.map(c => c.id === editingId ? { ...c, ...payload, id: editingId, lastUpdated: new Date() } : c));
                    } else {
-                       const { data, error } = await supabase.from('credentials').insert(payload).select().single();
+                       const { data, error } = await supabase.from('credentials').insert({ ...payload, created_by: user?.id }).select(`
+                           *,
+                           profiles!created_by ( username, full_name )
+                       `).single();
                        if (error) throw error;
-                       setCredentials(prev => [{ id: data.id, clientName: data.client_name, serviceName: data.service_name, crmLink: data.crm_link, username: data.username, password: data.password, lastUpdated: new Date(data.created_at), folderId: data.folder_id }, ...prev]);
+                       setCredentials(prev => [{ id: data.id, clientName: data.client_name, serviceName: data.service_name, crmLink: data.crm_link, username: data.username, password: data.password, lastUpdated: new Date(data.created_at), folderId: data.folder_id, createdAt: data.created_at, createdBy: data.profiles }, ...prev]);
                    }
                    setToast({ message: "Credential Saved", type: "success" });
                    setIsAddModalOpen(false);
@@ -1250,6 +1403,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                        <Input label="Username" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} />
                        <Input label="Password" type="text" value={newCred.password} onChange={e => setNewCred({...newCred, password: e.target.value})} />
                    </div>
+                   
+                   {/* Metadata Footer in Add/Edit Modal */}
+                   {editingId && (
+                       <MetadataFooter 
+                           createdAt={credentials.find(c => c.id === editingId)?.createdAt} 
+                           createdBy={credentials.find(c => c.id === editingId)?.createdBy} 
+                       />
+                   )}
+
                    <div className="pt-4 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => { setIsAddModalOpen(false); setEditingId(null); }}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Record</Button></div>
                </div>
            </form>

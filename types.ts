@@ -37,12 +37,18 @@ export interface FormSubmission {
   mapped_data?: Record<string, any>;
 }
 
+export interface CreatorProfile {
+  username?: string;
+  full_name?: string;
+}
+
 export interface Folder {
   id: string;
   name: string;
   parentId: string | null;
   createdAt: string;
   type?: 'credential' | 'form';
+  createdBy?: CreatorProfile;
 }
 
 export interface StoredCredential {
@@ -54,4 +60,18 @@ export interface StoredCredential {
   password: string;
   lastUpdated: Date;
   folderId: string | null;
+  createdAt?: string;
+  createdBy?: CreatorProfile;
+}
+
+export interface FormDefinition {
+    id: string;
+    name: string;
+    folderId: string | null;
+    webhookKey: string; 
+    webhookUrl: string;
+    fields: any[];
+    createdAt: string;
+    status: 'draft' | 'active'; 
+    createdBy?: CreatorProfile;
 }

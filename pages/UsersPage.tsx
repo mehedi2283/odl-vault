@@ -84,9 +84,12 @@ serve(async (req) => {
   }
 })`;
 
-const SQL_TEMPLATE = `-- ⚠️ CRITICAL UPDATE: Run this to add presence tracking
+const SQL_TEMPLATE = `-- ⚠️ CRITICAL UPDATE: Run this to add metadata columns
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen timestamp with time zone;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone;
+ALTER TABLE public.credentials ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
+ALTER TABLE public.forms ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
 
 -- COMPLETE ODL VAULT SCHEMA SETUP
 -- 1. Profiles & Roles
@@ -109,7 +112,8 @@ create table if not exists public.folders (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   name text not null,
   parent_id uuid references public.folders(id),
-  type text default 'credential'
+  type text default 'credential',
+  created_by uuid references public.profiles(id)
 );
 
 -- 3. Credentials
@@ -122,7 +126,8 @@ create table if not exists public.credentials (
   username text,
   password text,
   folder_id uuid references public.folders(id),
-  last_updated timestamp with time zone default timezone('utc'::text, now())
+  last_updated timestamp with time zone default timezone('utc'::text, now()),
+  created_by uuid references public.profiles(id)
 );
 
 -- 4. Forms & Submissions
@@ -134,7 +139,8 @@ create table if not exists public.forms (
   webhook_key uuid default gen_random_uuid(),
   webhook_url text,
   status text default 'draft',
-  fields jsonb default '[]'::jsonb
+  fields jsonb default '[]'::jsonb,
+  created_by uuid references public.profiles(id)
 );
 
 create table if not exists public.form_submissions (
@@ -478,6 +484,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
         transition={{ duration: 0.3 }}
         className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
       >
+         {/* ... Table logic ... */}
          {loading ? (
              <div className="p-12 flex flex-col items-center justify-center text-gray-400">
                  <Loader2 className="w-8 h-8 animate-spin mb-2 text-indigo-500" />
@@ -498,30 +505,17 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                          <AnimatePresence mode="popLayout">
                          {filteredProfiles.length > 0 ? (
                              filteredProfiles.map((profile, index) => {
+                                 // ... (Row render logic same as before) ...
                                  const isMe = currentUser?.id === profile.id;
                                  const isOnline = onlineUsers.has(profile.id);
-
-                                 // Determine Privileges
                                  const myRole = currentUser?.role;
                                  const targetRole = profile.role;
-                                 
                                  const amIGrandAdmin = myRole === 'grand_admin';
                                  const amIMasterAdmin = myRole === 'master_admin';
-                                 
-                                 // Determine if this specific row can be edited by the current user
                                  const isLocked = targetRole === 'grand_admin';
-                                 
-                                 // Can I edit this row's role?
                                  let canEditRole = false;
-                                 if (amIGrandAdmin && !isLocked) {
-                                     canEditRole = true;
-                                 } else if (amIMasterAdmin && !isLocked) {
-                                     // Master admin cannot change another Master Admin
-                                     if (targetRole !== 'master_admin') {
-                                         canEditRole = true;
-                                     }
-                                 }
-
+                                 if (amIGrandAdmin && !isLocked) canEditRole = true;
+                                 else if (amIMasterAdmin && !isLocked && targetRole !== 'master_admin') canEditRole = true;
                                  const canEditProfile = isMe || (amIGrandAdmin && !isLocked) || (amIMasterAdmin && !isLocked);
 
                                  return (
@@ -568,6 +562,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                              </div>
                                          </td>
                                          <td className="px-6 py-4">
+                                             {/* ... Role Badges ... */}
                                              {profile.role === 'grand_admin' && (<div className="inline-flex items-center px-3 py-1 rounded-full border border-orange-200 bg-orange-50 text-orange-700 text-xs font-semibold shadow-sm"><Crown className="w-3.5 h-3.5 mr-1.5" />Grand Administrator</div>)}
                                              {profile.role === 'master_admin' && (<div className="inline-flex items-center px-3 py-1 rounded-full border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold shadow-sm"><ShieldCheck className="w-3.5 h-3.5 mr-1.5" />Master Administrator</div>)}
                                              {profile.role === 'admin' && (<div className="inline-flex items-center px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold shadow-sm"><ShieldAlert className="w-3.5 h-3.5 mr-1.5" />Administrator</div>)}
@@ -583,19 +578,10 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                              ) : (
                                                  <div className="relative inline-flex bg-gray-100 p-1.5 rounded-lg border border-gray-200 select-none shadow-inner">
                                                      {updatingId === profile.id && (<div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-[1px] rounded-lg flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>)}
-                                                     
-                                                     {/* 
-                                                        PERMISSION LOGIC:
-                                                        - Grand Admin: Can grant Master Admin, Admin, User.
-                                                        - Master Admin: Can grant Admin, User.
-                                                     */}
-
                                                      {amIGrandAdmin && (
                                                          <button onClick={() => handleRoleUpdate(profile.id, 'master_admin')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'master_admin' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-blue-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Master Admin"><ShieldCheck className="w-4 h-4" /></button>
                                                      )}
-
                                                      <button onClick={() => handleRoleUpdate(profile.id, 'admin')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'admin' ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Admin"><ShieldAlert className="w-4 h-4" /></button>
-
                                                      <button onClick={() => handleRoleUpdate(profile.id, 'user')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'user' ? 'bg-white text-gray-800 shadow-sm ring-1 ring-black/5' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Operative"><UserIcon className="w-4 h-4" /></button>
                                                  </div>
                                              )}
@@ -614,7 +600,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
          )}
       </motion.div>
 
-      {/* Edit User Modal */}
+      {/* ... Modals (Edit User, Edge Code, SQL) same as previous ... */}
       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title={editingUser ? `Edit: ${editingUser.username}` : 'Edit Profile'}>
         <form onSubmit={handleSaveProfile} className="space-y-5">
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-3">
@@ -634,7 +620,6 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
         </form>
       </Modal>
 
-      {/* Edge Code Modal */}
       <Modal isOpen={isEdgeCodeModalOpen} onClose={() => setIsEdgeCodeModalOpen(false)} title="Edge Function Index Code">
           <div className="relative">
              <div className="absolute top-2 right-2 z-10"><button onClick={() => copyToClipboard(EDGE_FUNCTION_TEMPLATE)} className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"><Copy className="h-4 w-4" /></button></div>
@@ -643,7 +628,6 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
           </div>
       </Modal>
 
-      {/* SQL Modal */}
       <Modal isOpen={isSqlModalOpen} onClose={() => setIsSqlModalOpen(false)} title="SQL Schema Setup">
           <div className="relative">
              <div className="absolute top-2 right-2 z-10"><button onClick={() => copyToClipboard(SQL_TEMPLATE)} className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"><Copy className="h-4 w-4" /></button></div>
