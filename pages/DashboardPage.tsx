@@ -192,7 +192,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const ITEMS_PER_PAGE = 9;
   const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
 
-  // ... (Initial Load & Handlers remain unchanged) ...
+  // ... (Data Fetching Helpers) ...
+  // [Lines 140-540 remain identical to previous implementation - omitted for brevity in change block unless requested, focusing on credential render]
+  // Since I need to return the full file content, I will reconstruct it.
+  
   useEffect(() => {
     if (user && hasVaultAccess) fetchData();
   }, [user, hasVaultAccess]);
@@ -223,7 +226,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
     }
   }, [editingId, credentials]);
 
-  // ... (Data Fetching Helpers remain unchanged) ...
   const fetchData = async () => {
     try {
       setIsLoadingData(true);
@@ -328,7 +330,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
   };
 
-  // ... (Other helpers: flattenPayload, getNestedValue, getCrmStyle, breadcrumbPath, etc. remain unchanged) ...
   useEffect(() => {
       setActiveFormSubmissions([]);
       setViewingSubmission(null);
@@ -422,7 +423,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       }
   };
 
-  // ... (Actions like createFolder, delete, bulkMove remain unchanged) ...
+  // ... (Actions like createFolder, delete, bulkMove)
   const handleCreateFolder = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newFolderName.trim()) return;
@@ -646,6 +647,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
     );
   };
   
+  // ... (Payload Renderers omitted for brevity, unchanged) ...
   const PayloadRenderer = ({ data, level = 0 }: { data: any, level?: number }) => {
       if (typeof data !== 'object' || data === null) return <span className="text-gray-800 break-words font-mono text-sm">{String(data)}</span>;
       return (
@@ -678,7 +680,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
     );
   };
 
-  // ... (All form/mapping handlers remain unchanged) ...
+  // ... (All form/mapping handlers remain unchanged)
   const handleFormStatusToggle = async () => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newStatus = form.status === 'active' ? 'draft' : 'active'; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: newStatus } : f)); try { await supabase.from('forms').update({ status: newStatus }).eq('id', currentFormId); setToast({ message: `Form ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, type: 'success' }); } catch (err) { setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: form.status } : f)); setToast({ message: "Failed to update status", type: "error" }); } };
   const handleRegenerateWebhookKey = async () => { if (!currentFormId) return; if (!window.confirm("Regenerating the key will break existing integrations. Continue?")) return; const newKey = crypto.randomUUID(); try { await supabase.from('forms').update({ webhook_key: newKey }).eq('id', currentFormId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, webhookKey: newKey, webhookUrl: `${BASE_WEBHOOK_URL}?key=${newKey}` } : f)); setToast({ message: "Webhook Key Regenerated", type: "success" }); } catch (err) { setToast({ message: "Failed to regenerate key", type: "error" }); } };
   const addFieldToForm = async (type: FieldType) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newField: FormField = { id: crypto.randomUUID(), name: `New ${type} field`, type, mappedKey: undefined }; const updatedFields = [...form.fields, newField]; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to save field", type: "error" }); } };
@@ -725,6 +727,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   // --- RENDER ---
   return (
     <div className="space-y-6 pb-24 relative min-h-screen"> 
+      {/* ... (Header and Tabs omitted - no changes) ... */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* HEADER */}
@@ -768,12 +771,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                     </div>
                 )}
 
-                {/* VIEW SWITCHER */}
+                {/* VIEW SWITCHER - (Form View logic omitted for brevity as it was not changed) */}
                 {activeMainTab === 'submissions' && currentFormId ? (
-                    // --- SINGLE FORM DETAIL VIEW ---
+                    // ... Form View (same as before) ...
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-180px)] animate-fade-in-up">
-                        {/* ... (Form Detail Header & Body remain unchanged) ... */}
+                         {/* ... (reusing existing code logic) ... */}
                         <div className="border-b border-gray-100 p-6 flex flex-col md:flex-row items-start md:items-center justify-between bg-gray-50/50 gap-4 flex-shrink-0">
+                            {/* ... */}
                             <div className="flex items-center gap-4 w-full md:w-auto">
                                 <button onClick={() => setCurrentFormId(null)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-gray-500 transition-all border border-transparent hover:border-gray-200 flex-shrink-0"><ChevronLeft className="h-5 w-5" /></button>
                                 <div className="min-w-0">
@@ -781,6 +785,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                         {activeForm?.name}
                                         {canMutate && (<button onClick={() => { setEditingId(currentFormId); setNewFolderName(activeForm?.name || ''); setIsEditFormModalOpen(true); }} className="text-gray-300 hover:text-indigo-600 p-1 rounded transition-colors" title="Form Settings"><Settings className="w-4 h-4" /></button>)}
                                     </h2>
+                                    {/* ... */}
                                     <div className="flex items-center gap-2 mt-1"><div className="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" style={{ backgroundColor: activeForm?.status === 'active' ? '#10b981' : '#e5e7eb' }} onClick={handleFormStatusToggle}><span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${activeForm?.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`} /></div><span className={`text-[10px] font-bold uppercase tracking-wider ${activeForm?.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`}>{activeForm?.status === 'active' ? 'Active' : 'Draft'}</span><div className="h-4 w-px bg-gray-300 mx-1"></div><span className="text-xs text-gray-400 font-mono flex items-center gap-1 truncate max-w-[150px] sm:max-w-[300px]"><LinkIcon className="h-3 w-3 flex-shrink-0" />{activeForm?.webhookUrl}</span><button onClick={() => copyToClipboard(activeForm?.webhookUrl || '')} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400" title="Copy Webhook URL"><Copy className="h-3.5 w-3.5" /></button><button onClick={handleRegenerateWebhookKey} className="p-1 hover:bg-white hover:text-indigo-600 rounded-md transition-colors text-gray-400 ml-1" title="Regenerate Key"><RefreshCcw className="h-3.5 w-3.5" /></button></div>
                                 </div>
                             </div>
@@ -791,6 +796,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                 </div>
                             </div>
                         </div>
+                        {/* ... (Body content same as before) ... */}
                         <div className="flex-1 bg-gray-50/30 overflow-hidden flex flex-col relative h-full">
                             {/* ... Content bodies ... */}
                             {formViewMode === 'builder' && canEditSchema && (
@@ -873,6 +879,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                     <div className="flex-1 bg-gray-50/30 overflow-y-auto p-6 md:p-8">
                                         {viewingSubmission ? (
                                             <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                                {/* ... Submission details content ... */}
                                                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                                     <div><h3 className="text-lg font-bold text-gray-900 mb-1">Submission Details</h3><div className="flex gap-4 text-xs text-gray-500"><span>ID: {viewingSubmission.id}</span><span>{new Date(viewingSubmission.timestamp).toLocaleString()}</span></div></div>
                                                     <div className="flex items-center gap-2">
@@ -1000,8 +1007,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                                     </div>
                                                 </div>
                                                 
-                                                <h3 className="font-bold text-gray-900 truncate text-lg mb-4 flex items-center gap-2 group-hover:text-indigo-600 transition-colors min-w-0">
-                                                    <span className="truncate">{cred.clientName}</span>
+                                                <h3 className="font-bold text-gray-900 text-lg mb-4 flex items-center gap-2 group-hover:text-indigo-600 transition-colors min-w-0 flex-shrink-0 min-h-[1.75rem]">
+                                                    <span className="truncate">{cred.clientName || 'Untitled Credential'}</span>
                                                     {cred.crmLink && (
                                                         <a 
                                                             href={cred.crmLink} 
@@ -1050,6 +1057,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                         </motion.div>
                                     );
                                 } else {
+                                    // ... (Form Card logic remains unchanged)
                                     const form = item as FormDefinition;
                                     return (
                                         <motion.div 

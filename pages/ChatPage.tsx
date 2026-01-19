@@ -67,6 +67,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
   
   // Emoji State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -102,6 +103,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-resize Edit Textarea
+  useLayoutEffect(() => {
+    if (editInputRef.current) {
+        // Reset height to auto to correctly calculate scrollHeight for shrinking content
+        editInputRef.current.style.height = 'auto';
+        // Set new height based on scrollHeight
+        editInputRef.current.style.height = `${editInputRef.current.scrollHeight}px`;
+    }
+  }, [editContent, editingId]);
 
   // Sync Notification Permission with Browser State
   useEffect(() => {
@@ -509,13 +520,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                              </div>
                         </div>
                     )}
-                    <div className="relative">
+                    <div className="relative w-full">
                         {!isMe && <RoleBadge role={msg.role} />}
                         
-                        <div className={`relative px-5 py-3 text-sm leading-relaxed transition-all ${bubbleStyle}`}>
+                        <div className={`relative px-5 py-3 text-sm leading-relaxed transition-all w-full ${bubbleStyle}`}>
                             {!isEditing ? (
                                 <>
-                                    <div className="break-words font-medium whitespace-pre-wrap">{msg.content}</div>
+                                    <div className="break-words break-all font-medium whitespace-pre-wrap">{msg.content}</div>
                                     <div className={`text-[9px] mt-1 text-right flex items-center justify-end gap-1 ${metaTextColor}`}>
                                         {msg.updated_at && (
                                             <span 
@@ -541,16 +552,17 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                                 </>
                             ) : (
                                 // Inline Editor
-                                <div className="min-w-[200px]">
+                                <div className="w-full min-w-[200px]">
                                     <textarea 
+                                        ref={editInputRef}
                                         value={editContent}
                                         onChange={(e) => setEditContent(e.target.value)}
                                         onKeyDown={handleEditKeyDown}
-                                        className="w-full bg-white/20 text-inherit border border-white/30 rounded p-1 text-sm outline-none focus:ring-1 focus:ring-white/50 resize-none overflow-hidden"
-                                        rows={Math.max(1, editContent.split('\n').length)}
+                                        className="w-full bg-black/10 dark:bg-white/10 text-inherit border-0 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-white/50 resize-none overflow-hidden leading-relaxed break-all whitespace-pre-wrap"
+                                        style={{ minHeight: '60px' }}
                                         autoFocus
                                     />
-                                    <div className="flex justify-end gap-2 mt-2 items-center">
+                                    <div className="flex justify-end gap-2 mt-2 items-center relative">
                                         {/* Edit Emoji Picker */}
                                         <div className="relative" ref={editEmojiPickerRef}>
                                             <button 
@@ -561,7 +573,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                                                 <Smile size={14} />
                                             </button>
                                             {showEditEmojiPicker && (
-                                                <div className="absolute bottom-8 right-0 z-50 shadow-xl rounded-xl border border-gray-100 text-left">
+                                                <div className="absolute bottom-full mb-2 right-0 z-50 shadow-2xl rounded-xl border border-gray-100 text-left overflow-hidden origin-bottom-right">
                                                     <EmojiPicker 
                                                         onEmojiClick={onEditEmojiClick}
                                                         theme={Theme.LIGHT}
@@ -619,7 +631,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                onChange={(e) => setInput(e.target.value)}
                onKeyDown={handleKeyDown}
                placeholder="Transmit secure message..."
-               className="w-full pl-5 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200 mb-0.5 resize-none min-h-[50px] max-h-[120px]"
+               className="w-full pl-5 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200 mb-0.5 resize-none min-h-[50px] max-h-[120px] break-all whitespace-pre-wrap"
                rows={1}
              />
              
