@@ -70,7 +70,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+          // FIX: Handle "Invalid Refresh Token" or "Refresh Token Not Found"
+          console.warn("Session check error:", error.message);
+          if (error.message.includes('Refresh Token') || error.message.includes('refresh_token_not_found')) {
+              // Clear invalid local storage state to prevent error loops
+              supabase.auth.signOut().then(() => setUser(null));
+          }
+      }
+      
       if (session?.user) {
         setUser({
           id: session.user.id,
@@ -82,13 +91,20 @@ const App: React.FC = () => {
       }
     }).catch(err => {
       console.error("Session check failed", err);
+      // Failsafe: Ensure we are clean if something catastrophic happens
+      supabase.auth.signOut();
     }).finally(() => {
       setLoading(false);
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Handle explicit sign outs or token issues
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          setUser(null);
+          localStorage.removeItem('odl_is_locked');
+          localStorage.removeItem('odl_last_active');
+      } else if (session?.user) {
         // Only update if ID changes to avoid redundant updates during profile fetch
         setUser(prev => {
           if (prev?.id === session.user.id) return prev;
@@ -99,11 +115,12 @@ const App: React.FC = () => {
             role: 'user'
           };
         });
-        if (session.user.id !== user?.id) {
+        // Check profile updates if the user just signed in or session refreshed
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
            fetchUserProfile(session.user.id, session.user.email);
         }
-      } else {
-        setUser(null);
+      } else if (!session) {
+          setUser(null);
       }
       setLoading(false);
     });

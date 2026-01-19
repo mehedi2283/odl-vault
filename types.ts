@@ -4,6 +4,7 @@ export interface User {
   username: string;
   full_name?: string;
   role: 'grand_admin' | 'master_admin' | 'admin' | 'user';
+  last_seen?: string;
 }
 
 export interface ChatMessage {
@@ -13,7 +14,9 @@ export interface ChatMessage {
   full_name?: string; // Added display name
   content: string;
   created_at: string;
+  updated_at?: string; // Track edits
   role?: string; // Optional role for styling
+  last_seen?: string; // From joined profile
 }
 
 export enum RoutePath {

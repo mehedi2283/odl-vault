@@ -5,7 +5,7 @@ import {
   Loader2, Crown, Mail, Calendar, User as UserIcon, Lock, 
   CheckCircle2, UserCog, Pencil, Key, X, Save,
   Terminal, Database, Copy,
-  ShieldCheck
+  ShieldCheck, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../services/supabase';
@@ -14,6 +14,7 @@ import Toast from '../components/Toast';
 import Modal from '../components/Modal';
 import Input from '../components/Input';
 import Button from '../components/Button';
+import { usePresence } from '../hooks/usePresence';
 
 // --- CONSTANTS: Backend Templates ---
 
@@ -83,15 +84,18 @@ serve(async (req) => {
   }
 })`;
 
-const SQL_TEMPLATE = `-- COMPLETE ODL VAULT SCHEMA SETUP
--- Run this entire script in Supabase SQL Editor
+const SQL_TEMPLATE = `-- ⚠️ CRITICAL UPDATE: Run this to add presence tracking
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen timestamp with time zone;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone;
 
+-- COMPLETE ODL VAULT SCHEMA SETUP
 -- 1. Profiles & Roles
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   username text,
   full_name text,
   role text default 'user',
+  last_seen timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -152,6 +156,9 @@ create table if not exists public.messages (
   user_id uuid references public.profiles(id)
 );
 
+-- Ensure updated_at exists (Migration)
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone;
+
 -- 6. Dead Drops (ENHANCED SCHEMA)
 create table if not exists public.dead_drops (
   id uuid default gen_random_uuid() primary key,
@@ -173,7 +180,6 @@ begin
   if not exists (select 1 from information_schema.columns where table_name = 'dead_drops' and column_name = 'burn_after_read') then
     alter table public.dead_drops add column burn_after_read boolean default true;
   end if;
-  -- Optional: Drop legacy column if you wish, or keep it.
 end $$;
 
 -- 7. ENABLE ROW LEVEL SECURITY
@@ -186,17 +192,13 @@ alter table public.messages enable row level security;
 alter table public.dead_drops enable row level security;
 
 -- 8. POLICIES
--- ... (Existing policies mostly unchanged) ...
-
--- Dead Drops Policies (Public Access)
-drop policy if exists "Public insert dead_drops" on public.dead_drops;
+-- ... (Existing policies assumed) ...
 create policy "Public insert dead_drops" on public.dead_drops for insert to authenticated with check (true);
-
-drop policy if exists "Public read dead_drops" on public.dead_drops;
 create policy "Public read dead_drops" on public.dead_drops for select to anon, authenticated using (true);
-
-drop policy if exists "Public delete dead_drops" on public.dead_drops;
 create policy "Public delete dead_drops" on public.dead_drops for delete to anon, authenticated using (true);
+-- IMPORTANT: Allow profile updates for Last Seen
+create policy "Users can update own profile" on public.profiles for update to authenticated using (auth.uid() = id);
+
 
 -- 9. Role Update Function (Standard)
 create or replace function public.update_user_role(
@@ -244,15 +246,18 @@ interface Profile {
   role: 'grand_admin' | 'master_admin' | 'admin' | 'user';
   full_name?: string;
   created_at?: string;
+  last_seen?: string;
 }
 
 const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
-  // ... (Component Implementation remains unchanged, just updating the SQL constant above)
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  
+  // Presence Hook
+  const onlineUsers = usePresence(currentUser);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -294,6 +299,10 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
 
   useEffect(() => {
     fetchProfiles();
+    
+    // Periodically refresh list to update Last Seen times
+    const interval = setInterval(fetchProfiles, 60000); 
+    return () => clearInterval(interval);
   }, []);
 
   const handleRoleUpdate = async (userId: string, newRole: 'admin' | 'user' | 'master_admin') => {
@@ -415,6 +424,18 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
     return new Date(dateString).toLocaleDateString('en-GB'); 
   };
 
+  const formatLastSeen = (dateString?: string) => {
+      if (!dateString) return 'Offline';
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+      
+      if (diffInSeconds < 60) return 'Just now';
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+      return date.toLocaleDateString();
+  };
+
   return (
     <div className="space-y-6 pb-24">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -478,7 +499,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                          {filteredProfiles.length > 0 ? (
                              filteredProfiles.map((profile, index) => {
                                  const isMe = currentUser?.id === profile.id;
-                                 
+                                 const isOnline = onlineUsers.has(profile.id);
+
                                  // Determine Privileges
                                  const myRole = currentUser?.role;
                                  const targetRole = profile.role;
@@ -513,8 +535,15 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                      >
                                          <td className="px-6 py-4">
                                              <div className="flex items-center gap-4">
-                                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ring-2 ring-white flex-shrink-0 ${profile.role === 'grand_admin' ? 'bg-orange-500' : profile.role === 'master_admin' ? 'bg-blue-600' : profile.role === 'admin' ? 'bg-purple-600' : 'bg-slate-500'}`}>
-                                                     {profile.role === 'grand_admin' ? <Crown className="w-5 h-5" /> : (profile.full_name?.[0] || profile.username?.[0] || 'U').toUpperCase()}
+                                                 <div className="relative">
+                                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ring-2 ring-white flex-shrink-0 ${profile.role === 'grand_admin' ? 'bg-orange-500' : profile.role === 'master_admin' ? 'bg-blue-600' : profile.role === 'admin' ? 'bg-purple-600' : 'bg-slate-500'}`}>
+                                                         {profile.role === 'grand_admin' ? <Crown className="w-5 h-5" /> : (profile.full_name?.[0] || profile.username?.[0] || 'U').toUpperCase()}
+                                                     </div>
+                                                     {isOnline && (
+                                                         <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full">
+                                                             <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75"></span>
+                                                         </span>
+                                                     )}
                                                  </div>
                                                  <div className="min-w-0">
                                                      <div className="flex items-center gap-2">
@@ -522,7 +551,19 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                                          {isMe && <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-wide border border-indigo-100 flex-shrink-0">You</span>}
                                                          {canEditProfile && (<button onClick={() => openEditModal(profile)} className="ml-2 p-1 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100" title="Edit Profile"><Pencil className="w-3.5 h-3.5" /></button>)}
                                                      </div>
-                                                     <div className="flex items-center mt-1 text-xs text-gray-400"><Mail className="w-3 h-3 mr-1" />Email Verified</div>
+                                                     <div className="flex items-center mt-1 text-xs text-gray-400">
+                                                        {isOnline ? (
+                                                            <div className="flex items-center text-emerald-600 font-medium">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
+                                                                Online Now
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center text-gray-400" title={profile.last_seen ? new Date(profile.last_seen).toLocaleString() : ''}>
+                                                                <Clock className="w-3 h-3 mr-1" />
+                                                                Last seen {formatLastSeen(profile.last_seen)}
+                                                            </div>
+                                                        )}
+                                                     </div>
                                                  </div>
                                              </div>
                                          </td>
