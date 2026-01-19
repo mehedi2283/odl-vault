@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flame, Lock, Loader2, FileWarning, Unlock, ShieldCheck, Terminal, MousePointer2, EyeOff, Ban } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import Toast from '../components/Toast';
 
 // --- CRYPTO UTILS ---
 const decryptPayload = async (ciphertextB64: string, ivB64: string, keyB64: string) => {
@@ -34,7 +35,7 @@ const decryptPayload = async (ciphertextB64: string, ivB64: string, keyB64: stri
                 return json; // { content: "...", options: { allowCopy: boolean } }
             }
             return { content: decryptedString, options: { allowCopy: true } };
-        } catch (e) {
+        } catch {
             return { content: decryptedString, options: { allowCopy: true } };
         }
 
@@ -54,24 +55,54 @@ const DeadDropRetrievalPage: React.FC = () => {
   // Security States
   const [isRevealed, setIsRevealed] = useState(false);
   const [isWindowBlurred, setIsWindowBlurred] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Detect Window Blur for Anti-Screenshot/Privacy
+  // 1. Detect Window Blur & Key Press for Anti-Screenshot/Privacy
   useEffect(() => {
       const handleBlur = () => setIsWindowBlurred(true);
       const handleFocus = () => setIsWindowBlurred(false);
+      const handleKeyDown = () => setIsWindowBlurred(true); // Any key triggers blur
+
       window.addEventListener('blur', handleBlur);
       window.addEventListener('focus', handleFocus);
+      window.addEventListener('keydown', handleKeyDown);
+      
       return () => {
           window.removeEventListener('blur', handleBlur);
           window.removeEventListener('focus', handleFocus);
+          window.removeEventListener('keydown', handleKeyDown);
       };
   }, []);
 
-  // Prevent Context Menu
+  // 2. Global Hold Release Listener (Ensures message hides if mouse released anywhere)
+  useEffect(() => {
+      const handleRelease = () => setIsRevealed(false);
+      
+      window.addEventListener('mouseup', handleRelease);
+      window.addEventListener('touchend', handleRelease);
+      
+      return () => {
+          window.removeEventListener('mouseup', handleRelease);
+          window.removeEventListener('touchend', handleRelease);
+      };
+  }, []);
+
+  // 3. Prevent Context Menu & Native Copy
   useEffect(() => {
       const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+      
+      const handleCopy = (e: ClipboardEvent) => {
+          e.preventDefault();
+          setToast({ message: "Security Protocol: Content extraction blocked.", type: 'error' });
+      };
+
       document.addEventListener('contextmenu', handleContextMenu);
-      return () => document.removeEventListener('contextmenu', handleContextMenu);
+      document.addEventListener('copy', handleCopy);
+      
+      return () => {
+          document.removeEventListener('contextmenu', handleContextMenu);
+          document.removeEventListener('copy', handleCopy);
+      };
   }, []);
 
   const getKeyFromUrl = () => {
@@ -125,8 +156,16 @@ const DeadDropRetrievalPage: React.FC = () => {
     }
   };
 
+  const handleManualCopy = () => {
+      if (content) {
+          navigator.clipboard.writeText(content);
+          setToast({ message: "Decrypted content copied to clipboard.", type: 'success' });
+      }
+  };
+
   return (
     <div className={`min-h-screen bg-[#09090b] text-gray-200 flex flex-col items-center justify-center p-4 relative overflow-hidden font-mono transition-all duration-300 ${isWindowBlurred ? 'blur-xl grayscale' : ''}`}>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Grid Background */}
       <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#27272a_1px,transparent_1px),linear-gradient(to_bottom,#27272a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20 pointer-events-none"></div>
@@ -136,11 +175,14 @@ const DeadDropRetrievalPage: React.FC = () => {
 
       {/* Privacy Shield Overlay */}
       {isWindowBlurred && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md">
-              <div className="text-center">
+          <div 
+            onClick={() => setIsWindowBlurred(false)}
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md cursor-pointer"
+          >
+              <div className="text-center pointer-events-none">
                   <EyeOff className="w-16 h-16 text-zinc-500 mx-auto mb-4" />
                   <h2 className="text-2xl font-bold text-white">Privacy Shield Active</h2>
-                  <p className="text-zinc-500">Focus window to resume</p>
+                  <p className="text-zinc-500 mt-2">Tap anywhere to resume</p>
               </div>
           </div>
       )}
@@ -221,7 +263,7 @@ const DeadDropRetrievalPage: React.FC = () => {
                           </div>
                           {options.allowCopy ? (
                               <button 
-                                 onClick={() => navigator.clipboard.writeText(content || "")}
+                                 onClick={handleManualCopy}
                                  className="text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors uppercase flex items-center gap-2"
                               >
                                  Copy Data
@@ -233,26 +275,23 @@ const DeadDropRetrievalPage: React.FC = () => {
                           )}
                       </div>
                       
-                      <div className="relative group">
-                          {/* Screenshot Protection Overlay */}
+                      <div className="relative group select-none">
+                          {/* Hold-to-Reveal Overlay */}
                           <div 
-                             className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/10 backdrop-blur-xl transition-opacity duration-200 select-none cursor-crosshair ${isRevealed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                             className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-zinc-950/10 backdrop-blur-xl transition-opacity duration-150 cursor-crosshair ${isRevealed ? 'opacity-0' : 'opacity-100'}`}
                              onMouseDown={() => setIsRevealed(true)}
-                             onMouseUp={() => setIsRevealed(false)}
-                             onMouseLeave={() => setIsRevealed(false)}
                              onTouchStart={() => setIsRevealed(true)}
-                             onTouchEnd={() => setIsRevealed(false)}
                           >
-                              <div className="bg-zinc-900 p-4 rounded-full mb-4 shadow-lg border border-zinc-800">
+                              <div className="bg-zinc-900 p-4 rounded-full mb-4 shadow-lg border border-zinc-800 pointer-events-none">
                                   <MousePointer2 className="w-8 h-8 text-zinc-400" />
                               </div>
-                              <p className="text-sm font-bold text-zinc-300 uppercase tracking-widest">Hold to Reveal</p>
-                              <p className="text-[10px] text-zinc-600 mt-2">Anti-Capture Protocol Active</p>
+                              <p className="text-sm font-bold text-zinc-300 uppercase tracking-widest pointer-events-none">Hold to Reveal</p>
+                              <p className="text-[10px] text-zinc-600 mt-2 pointer-events-none">Anti-Capture Protocol Active</p>
                           </div>
 
                           {/* Content Area */}
-                          <div className={`p-8 overflow-x-auto min-h-[200px] transition-all duration-300 ${isRevealed ? 'filter-none' : 'blur-md opacity-50'}`}>
-                              <pre className={`font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed ${options.allowCopy ? 'selection:bg-emerald-500/30' : 'select-none'}`}>
+                          <div className={`p-8 overflow-x-auto min-h-[200px] transition-all duration-150 ${isRevealed ? 'filter-none' : 'blur-xl opacity-20'}`}>
+                              <pre className={`font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed`}>
                                   {content}
                               </pre>
                           </div>
