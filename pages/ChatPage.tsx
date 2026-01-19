@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import Toast from '../components/Toast';
 import { supabase } from '../services/supabase';
 import { ChatMessage, User } from '../types';
-import { usePresence } from '../hooks/usePresence';
+import { useOnlineUsers } from '../components/PresenceProvider';
 
 interface ChatPageProps {
   user: User | null;
@@ -57,8 +57,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  // Presence Hook
-  const onlineUsers = usePresence(user);
+  // Presence from Context
+  const onlineUsers = useOnlineUsers();
 
   // Pagination State
   const [hasMore, setHasMore] = useState(true);

@@ -14,10 +14,9 @@ import Toast from '../components/Toast';
 import Modal from '../components/Modal';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import { usePresence } from '../hooks/usePresence';
+import { useOnlineUsers } from '../components/PresenceProvider';
 
-// --- CONSTANTS: Backend Templates ---
-
+// ... (CONSTANTS remain unchanged)
 const EDGE_FUNCTION_TEMPLATE = `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
@@ -241,7 +240,6 @@ grant execute on function public.update_user_role(uuid, text) to service_role;
 update public.profiles set role = 'grand_admin' where username = 'babu.octopidigital@gmail.com';
 `;
 
-// ... (Rest of component remains unchanged)
 interface UsersPageProps {
   user: User | null;
 }
@@ -262,8 +260,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   
-  // Presence Hook
-  const onlineUsers = usePresence(currentUser);
+  // Presence from Context
+  const onlineUsers = useOnlineUsers();
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -506,7 +504,6 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                          <AnimatePresence mode="popLayout">
                          {filteredProfiles.length > 0 ? (
                              filteredProfiles.map((profile, index) => {
-                                 // ... (Row render logic same as before) ...
                                  const isMe = currentUser?.id === profile.id;
                                  const isOnline = onlineUsers.has(profile.id);
                                  const myRole = currentUser?.role;
