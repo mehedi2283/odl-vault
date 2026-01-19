@@ -275,9 +275,10 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
   const [isEdgeCodeModalOpen, setIsEdgeCodeModalOpen] = useState(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
 
-  const fetchProfiles = async () => {
+  // Updated to accept silent mode
+  const fetchProfiles = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const { data, error } = await supabase
         .from('profiles')
         .select('*');
@@ -297,17 +298,17 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
       setProfiles(sortedData);
     } catch (error) {
       console.error('Error fetching profiles:', error);
-      setToast({ message: "Failed to load operative list.", type: "error" });
+      if (showLoading) setToast({ message: "Failed to load operative list.", type: "error" });
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProfiles();
+    fetchProfiles(true); // Initial load with spinner
     
-    // Periodically refresh list to update Last Seen times
-    const interval = setInterval(fetchProfiles, 60000); 
+    // Periodically refresh list SILENTLY to update Last Seen times
+    const interval = setInterval(() => fetchProfiles(false), 60000); 
     return () => clearInterval(interval);
   }, []);
 
@@ -399,14 +400,14 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                   passMsg = ' and password';
               } else {
                   setToast({ message: "Name updated. Only the user can reset their own password.", type: "success" });
-                  fetchProfiles();
+                  fetchProfiles(false);
                   setIsEditModalOpen(false);
                   return;
               }
           }
 
           setToast({ message: `Operative profile${passMsg} updated.`, type: "success" });
-          fetchProfiles();
+          fetchProfiles(false);
           setIsEditModalOpen(false);
       } catch (err: any) {
           setToast({ message: err.message || "Update failed.", type: "error" });

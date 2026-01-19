@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -158,49 +158,21 @@ const App: React.FC = () => {
           element={<DeadDropRetrievalPage />} 
         />
         
+        {/* PROTECTED ROUTES - PERSISTENT LAYOUT */}
         <Route
-          path={RoutePath.DASHBOARD}
           element={
             <ProtectedRoute isAuthenticated={!!user}>
               <Layout onLogout={handleLogout} user={user}>
-                <DashboardPage user={user} />
+                <Outlet />
               </Layout>
             </ProtectedRoute>
           }
-        />
-
-        <Route
-          path={RoutePath.CHAT}
-          element={
-            <ProtectedRoute isAuthenticated={!!user}>
-              <Layout onLogout={handleLogout} user={user}>
-                <ChatPage user={user} />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path={RoutePath.DEAD_DROP + "/*"}
-          element={
-            <ProtectedRoute isAuthenticated={!!user}>
-              <Layout onLogout={handleLogout} user={user}>
-                <DeadDropPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path={RoutePath.USERS}
-          element={
-            <ProtectedRoute isAuthenticated={!!user}>
-              <Layout onLogout={handleLogout} user={user}>
-                <UsersPage user={user} />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
+        >
+            <Route path={RoutePath.DASHBOARD} element={<DashboardPage user={user} />} />
+            <Route path={RoutePath.CHAT} element={<ChatPage user={user} />} />
+            <Route path={RoutePath.DEAD_DROP + "/*"} element={<DeadDropPage />} />
+            <Route path={RoutePath.USERS} element={<UsersPage user={user} />} />
+        </Route>
         
         {/* Catch-all redirects to Dashboard (which handles auth check) */}
         <Route path="*" element={<Navigate to={RoutePath.DASHBOARD} replace />} />

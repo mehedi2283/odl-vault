@@ -7,6 +7,7 @@ import InactivityLock from './InactivityLock';
 import StealthMode from './StealthMode';
 import Toast from './Toast';
 import { supabase } from '../services/supabase';
+import { usePresence } from '../hooks/usePresence';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -24,6 +25,9 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
   const location = useLocation();
   const locationRef = useRef(location);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Global Presence Tracking (Broadcasts 'Online' status from any page)
+  usePresence(user);
 
   // Keep ref updated for event listener access
   useEffect(() => {
