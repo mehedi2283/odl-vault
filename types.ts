@@ -10,13 +10,14 @@ export interface User {
 export interface ChatMessage {
   id: string;
   user_id: string;
-  username: string; // This usually holds the email/handle
-  full_name?: string; // Added display name
+  username: string;
+  full_name?: string;
   content: string;
   created_at: string;
-  updated_at?: string; // Track edits
-  role?: string; // Optional role for styling
-  last_seen?: string; // From joined profile
+  updated_at?: string;
+  role?: string;
+  last_seen?: string;
+  seen_by?: string[];
 }
 
 export enum RoutePath {
@@ -54,9 +55,9 @@ export interface Folder {
 export interface StoredCredential {
   id: string;
   clientName: string;
-  serviceName: string; // CRM Name
+  serviceName: string; 
   crmLink: string;
-  username: string; // Login Email
+  username: string; 
   password: string;
   lastUpdated: Date;
   folderId: string | null;
@@ -74,4 +75,8 @@ export interface FormDefinition {
     createdAt: string;
     status: 'draft' | 'active'; 
     createdBy?: CreatorProfile;
+}
+
+export interface ToastContextType {
+  showToast: (message: string, type?: 'success' | 'error' | 'info' | 'mention', title?: string) => void;
 }

@@ -1,7 +1,6 @@
-// ... (imports remain unchanged)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { 
   Plus, Trash2, Eye, EyeOff, Copy, Shield, ShieldAlert, Search, Lock, 
   ChevronRight, ChevronDown, ChevronLeft, Building, Pencil, 
@@ -18,12 +17,9 @@ import { AnimatePresence, motion, Variants } from 'framer-motion';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Modal from '../components/Modal';
-import Toast from '../components/Toast';
 import CipherText from '../components/CipherText';
-import { StoredCredential, FormSubmission, User, Folder as FolderType, FormDefinition, CreatorProfile } from '../types';
+import { StoredCredential, FormSubmission, User, Folder as FolderType, FormDefinition, CreatorProfile, ToastContextType } from '../types';
 import { supabase } from '../services/supabase';
-
-// ... (Types and Constants remain unchanged)
 
 type FieldType = 'text' | 'textarea' | 'email' | 'phone';
 
@@ -52,33 +48,28 @@ const COMMON_SERVICES = [
   'Shopify', 'WordPress', 'Stripe', 'PayPal'
 ];
 
-// Updated Variants for Smooth Page Transition
+// Updated Variants: Removed movement, scaling, and staggering
 const pageVariants: Variants = {
-  initial: { opacity: 0, x: 20 },
+  initial: { opacity: 0 },
   animate: { 
     opacity: 1, 
-    x: 0,
     transition: {
-      duration: 0.3,
-      staggerChildren: 0.05,
-      ease: "easeOut"
+      duration: 0.2
     }
   },
   exit: { 
     opacity: 0, 
-    x: -20,
-    transition: { duration: 0.2, ease: "easeIn" }
+    transition: { duration: 0.1 }
   }
 };
 
 const itemVariants: Variants = {
-  initial: { opacity: 0, y: 10 },
+  initial: { opacity: 0 },
   animate: { 
     opacity: 1, 
-    y: 0,
-    transition: { type: "spring", stiffness: 200, damping: 20 } 
+    transition: { duration: 0.2 } 
   },
-  exit: { opacity: 0, scale: 0.95 }
+  exit: { opacity: 0, transition: { duration: 0.1 } }
 };
 
 interface DashboardPageProps {
@@ -107,6 +98,8 @@ const MetadataFooter = ({ createdBy, createdAt }: { createdBy?: CreatorProfile, 
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const navigate = useNavigate();
+  const { showToast } = useOutletContext<ToastContextType>();
+
   const [activeMainTab, setActiveMainTab] = useState<'credentials' | 'submissions'>('credentials');
   
   const hasVaultAccess = user?.role !== 'user';
@@ -161,8 +154,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; id: string | null, type: 'credential' | 'folder' | 'bulk' | 'form' }>({ isOpen: false, id: null, type: 'credential' });
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [crmFilter, setCrmFilter] = useState<string>('All');
@@ -192,10 +183,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const ITEMS_PER_PAGE = 9;
   const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
 
-  // ... (Data Fetching Helpers) ...
-  // [Lines 140-540 remain identical to previous implementation - omitted for brevity in change block unless requested, focusing on credential render]
-  // Since I need to return the full file content, I will reconstruct it.
-  
   useEffect(() => {
     if (user && hasVaultAccess) fetchData();
   }, [user, hasVaultAccess]);
@@ -289,7 +276,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
 
     } catch (error: any) { 
         console.warn('Error fetching data', error);
-        setToast({ message: "Sync error. Check connection or schema.", type: 'error' });
+        showToast("Sync error. Check connection or schema.", "error");
     } 
     finally { setIsLoadingData(false); }
   };
@@ -324,7 +311,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           }
       } catch (err) {
           console.error("Failed to fetch form submissions", err);
-          setToast({ message: "Failed to load submissions for this form", type: 'error' });
+          showToast("Failed to load submissions for this form", "error");
       } finally {
           setIsLoadingSubmissions(false);
       }
@@ -391,7 +378,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   const copyToClipboard = (text: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     navigator.clipboard.writeText(text);
-    setToast({ message: "Copied to clipboard", type: "success" });
+    showToast("Copied to clipboard", "success");
   };
   
   const handleEditFolder = (folderId: string, e: React.MouseEvent) => {
@@ -415,9 +402,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
           setIsEditFolderModalOpen(false);
           setNewFolderName('');
           setEditingFolderId(null);
-          setToast({ message: "Folder updated", type: "success" });
+          showToast("Folder updated", "success");
       } catch (err: any) {
-          setToast({ message: "Update failed", type: "error" });
+          showToast("Update failed", "error");
       } finally {
           setIsProcessingAction(false);
       }
@@ -451,10 +438,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
               }]);
               setIsCreateFolderModalOpen(false);
               setNewFolderName('');
-              setToast({ message: "Folder created", type: "success" });
+              showToast("Folder created", "success");
           }
       } catch (err: any) {
-          setToast({ message: err.message || "Failed to create folder", type: "error" });
+          showToast(err.message || "Failed to create folder", "error");
       } finally {
           setIsProcessingAction(false);
       }
@@ -476,7 +463,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                 setForms(prev => prev.filter(f => !ids.includes(f.id)));
             }
             setSelectedItems(new Set());
-            setToast({ message: `${ids.length} items deleted`, type: "success" });
+            showToast(`${ids.length} items deleted`, "success");
         } else if (id) {
             if (type === 'credential') {
                 await supabase.from('credentials').delete().eq('id', id);
@@ -490,13 +477,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                 setForms(prev => prev.filter(f => f.id !== id));
                 if (currentFormId === id) setCurrentFormId(null);
             }
-            setToast({ message: "Item deleted", type: "success" });
+            showToast("Item deleted", "success");
         }
     } catch (err: any) {
         if (err.code === '23503') {
-             setToast({ message: "Cannot delete folder not empty.", type: "error" });
+             showToast("Cannot delete folder not empty.", "error");
         } else {
-             setToast({ message: err.message || "Delete failed", type: "error" });
+             showToast(err.message || "Delete failed", "error");
         }
     } finally {
         setIsProcessingAction(false);
@@ -528,11 +515,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                   setForms(prev => prev.map(f => formIds.includes(f.id) ? { ...f, folderId: moveTargetFolderId } : f));
               }
           }
-          setToast({ message: "Items moved successfully", type: "success" });
+          showToast("Items moved successfully", "success");
           setIsMoveModalOpen(false);
           setSelectedItems(new Set());
       } catch (err) {
-          setToast({ message: "Failed to move items", type: "error" });
+          showToast("Failed to move items", "error");
       } finally {
           setIsProcessingAction(false);
       }
@@ -681,15 +668,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   };
 
   // ... (All form/mapping handlers remain unchanged)
-  const handleFormStatusToggle = async () => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newStatus = form.status === 'active' ? 'draft' : 'active'; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: newStatus } : f)); try { await supabase.from('forms').update({ status: newStatus }).eq('id', currentFormId); setToast({ message: `Form ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, type: 'success' }); } catch (err) { setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: form.status } : f)); setToast({ message: "Failed to update status", type: "error" }); } };
-  const handleRegenerateWebhookKey = async () => { if (!currentFormId) return; if (!window.confirm("Regenerating the key will break existing integrations. Continue?")) return; const newKey = crypto.randomUUID(); try { await supabase.from('forms').update({ webhook_key: newKey }).eq('id', currentFormId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, webhookKey: newKey, webhookUrl: `${BASE_WEBHOOK_URL}?key=${newKey}` } : f)); setToast({ message: "Webhook Key Regenerated", type: "success" }); } catch (err) { setToast({ message: "Failed to regenerate key", type: "error" }); } };
-  const addFieldToForm = async (type: FieldType) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newField: FormField = { id: crypto.randomUUID(), name: `New ${type} field`, type, mappedKey: undefined }; const updatedFields = [...form.fields, newField]; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to save field", type: "error" }); } };
+  const handleFormStatusToggle = async () => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newStatus = form.status === 'active' ? 'draft' : 'active'; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: newStatus } : f)); try { await supabase.from('forms').update({ status: newStatus }).eq('id', currentFormId); showToast(`Form ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, 'success'); } catch (err) { setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, status: form.status } : f)); showToast("Failed to update status", "error"); } };
+  const handleRegenerateWebhookKey = async () => { if (!currentFormId) return; if (!window.confirm("Regenerating the key will break existing integrations. Continue?")) return; const newKey = crypto.randomUUID(); try { await supabase.from('forms').update({ webhook_key: newKey }).eq('id', currentFormId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, webhookKey: newKey, webhookUrl: `${BASE_WEBHOOK_URL}?key=${newKey}` } : f)); showToast("Webhook Key Regenerated", "success"); } catch (err) { showToast("Failed to regenerate key", "error"); } };
+  const addFieldToForm = async (type: FieldType) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const newField: FormField = { id: crypto.randomUUID(), name: `New ${type} field`, type, mappedKey: undefined }; const updatedFields = [...form.fields, newField]; setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { showToast("Failed to save field", "error"); } };
   const updateFieldName = async (fieldId: string, newName: string) => { if (!currentFormId) return; setForms(prev => prev.map(f => { if (f.id !== currentFormId) return f; return { ...f, fields: f.fields.map(field => field.id === fieldId ? { ...field, name: newName } : field) }; })); const form = forms.find(f => f.id === currentFormId); if (form) { const updatedFields = form.fields.map(field => field.id === fieldId ? { ...field, name: newName } : field); await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } };
-  const removeField = async (fieldId: string) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const updatedFields = form.fields.filter(f => f.id !== fieldId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { setToast({ message: "Failed to remove field", type: "error" }); } };
-  const handleExplicitSaveMapping = async () => { if (!currentFormId) return; setIsProcessingAction(true); const form = forms.find(f => f.id === currentFormId); if (!form) return; try { await supabase.from('forms').update({ fields: form.fields }).eq('id', currentFormId); setToast({ message: "Mapping configuration saved", type: "success" }); } catch (err) { setToast({ message: "Failed to save mapping", type: "error" }); } finally { setIsProcessingAction(false); } };
+  const removeField = async (fieldId: string) => { if (!currentFormId) return; const form = forms.find(f => f.id === currentFormId); if (!form) return; const updatedFields = form.fields.filter(f => f.id !== fieldId); setForms(prev => prev.map(f => f.id === currentFormId ? { ...f, fields: updatedFields } : f)); try { await supabase.from('forms').update({ fields: updatedFields }).eq('id', currentFormId); } catch (err) { showToast("Failed to remove field", "error"); } };
+  const handleExplicitSaveMapping = async () => { if (!currentFormId) return; setIsProcessingAction(true); const form = forms.find(f => f.id === currentFormId); if (!form) return; try { await supabase.from('forms').update({ fields: form.fields }).eq('id', currentFormId); showToast("Mapping configuration saved", "success"); } catch (err) { showToast("Failed to save mapping", "error"); } finally { setIsProcessingAction(false); } };
   const handleReferenceSubmissionChange = (submissionId: string) => { setMappingReferenceId(submissionId); const sub = activeFormSubmissions.find(s => s.id === submissionId); if (sub) setLatestPayload(sub.payload); setIsSubmissionDropdownOpen(false); };
-  const handleUpdateStatus = async (submissionId: string, status: 'pending' | 'processed' | 'flagged') => { setActiveFormSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, status } : s)); if (viewingSubmission?.id === submissionId) setViewingSubmission(prev => prev ? { ...prev, status } : null); setIsStatusDropdownOpen(false); try { await supabase.from('form_submissions').update({ status }).eq('id', submissionId); setToast({ message: `Marked as ${status}`, type: "success" }); } catch (err) { setToast({ message: "Update failed", type: "error" }); } };
-  const handleDeleteSubmission = async () => { if (!viewingSubmission) return; setIsProcessingAction(true); try { await supabase.from('form_submissions').delete().eq('id', viewingSubmission.id); setActiveFormSubmissions(prev => prev.filter(s => s.id !== viewingSubmission.id)); setViewingSubmission(null); setIsDeleteRecordModalOpen(false); setToast({ message: "Submission deleted", type: "success" }); } catch (err) { setToast({ message: "Delete failed", type: "error" }); } finally { setIsProcessingAction(false); } };
+  const handleUpdateStatus = async (submissionId: string, status: 'pending' | 'processed' | 'flagged') => { setActiveFormSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, status } : s)); if (viewingSubmission?.id === submissionId) setViewingSubmission(prev => prev ? { ...prev, status } : null); setIsStatusDropdownOpen(false); try { await supabase.from('form_submissions').update({ status }).eq('id', submissionId); showToast(`Marked as ${status}`, "success"); } catch (err) { showToast("Update failed", "error"); } };
+  const handleDeleteSubmission = async () => { if (!viewingSubmission) return; setIsProcessingAction(true); try { await supabase.from('form_submissions').delete().eq('id', viewingSubmission.id); setActiveFormSubmissions(prev => prev.filter(s => s.id !== viewingSubmission.id)); setViewingSubmission(null); setIsDeleteRecordModalOpen(false); showToast("Submission deleted", "success"); } catch (err) { showToast("Delete failed", "error"); } finally { setIsProcessingAction(false); } };
   const handleSelectMappingKey = (key: string) => { if (!currentFormId || !activeMappingFieldId) return; setForms(prev => prev.map(f => { if (f.id !== currentFormId) return f; return { ...f, fields: f.fields.map(field => field.id === activeMappingFieldId ? { ...field, mappedKey: key } : field) }; })); setIsMappingModalOpen(false); setActiveMappingFieldId(null); };
 
   const renderMappingPicker = () => {
@@ -727,9 +714,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
   // --- RENDER ---
   return (
     <div className="space-y-6 pb-24 relative min-h-screen"> 
-      {/* ... (Header and Tabs omitted - no changes) ... */}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4 sticky top-0 bg-gray-50 z-30 py-4 -mt-4 px-1">
         <div><h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2"><CipherText text="ODL Vault" /></h1><p className="mt-1 text-gray-500">Secured Operation Data Layer</p></div>
@@ -1121,12 +1105,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
       {/* ... (Modals remain unchanged - Create Folder, Edit Folder, Create Form, Edit Form, Mapping, Delete, Move, Add/Edit Cred, Delete Sub) ... */}
       <Modal isOpen={isCreateFolderModalOpen} onClose={() => setIsCreateFolderModalOpen(false)} title="New Directory"><form onSubmit={handleCreateFolder}><Input label="Folder Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Finance, Operations" autoFocus /><div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFolderModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Create Folder</Button></div></form></Modal>
       <Modal isOpen={isEditFolderModalOpen} onClose={() => { setIsEditFolderModalOpen(false); setEditingFolderId(null); setNewFolderName(''); }} title="Folder Settings"><form onSubmit={handleUpdateFolder}><Input label="Folder Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} autoFocus />{editingFolderId && (<MetadataFooter createdAt={folders.find(f => f.id === editingFolderId)?.createdAt} createdBy={folders.find(f => f.id === editingFolderId)?.createdBy} />)}<div className="mt-6 flex justify-between gap-3 items-center"><Button type="button" variant="danger" className="mr-auto" onClick={() => { setDeleteConfirmation({ isOpen: true, id: editingFolderId, type: 'folder' }); setIsEditFolderModalOpen(false); }}>Delete Folder</Button><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => setIsEditFolderModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Changes</Button></div></div></form></Modal>
-      <Modal isOpen={isCreateFormModalOpen} onClose={() => setIsCreateFormModalOpen(false)} title="Initiate Form Protocol"><form onSubmit={async (e) => { e.preventDefault(); if (!newFolderName.trim()) return; setIsProcessingAction(true); try { const { data, error } = await supabase.from('forms').insert({ name: newFolderName, folder_id: currentFolderId, status: 'draft', created_by: user?.id }).select(`*, profiles!created_by ( username, full_name )`).single(); if (error) throw error; setForms(prev => [{ id: data.id, name: data.name, folderId: data.folder_id, webhookKey: data.webhook_key, webhookUrl: `${BASE_WEBHOOK_URL}?key=${data.webhook_key}`, fields: [], createdAt: data.created_at, status: 'draft', createdBy: data.profiles }, ...prev]); setIsCreateFormModalOpen(false); setNewFolderName(''); setCurrentFormId(data.id); setFormViewMode('builder'); } catch (err) { setToast({ message: "Creation failed", type: "error" }); } finally { setIsProcessingAction(false); } }}><Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Client Intake V1" autoFocus /><div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Initialize Form</Button></div></form></Modal>
-      <Modal isOpen={isEditFormModalOpen} onClose={() => { setIsEditFormModalOpen(false); setEditingId(null); setNewFolderName(''); }} title="Form Settings"><form onSubmit={async (e) => { e.preventDefault(); if (!newFolderName.trim() || !editingId) return; setIsProcessingAction(true); try { const { error } = await supabase.from('forms').update({ name: newFolderName }).eq('id', editingId); if (error) throw error; setForms(prev => prev.map(f => f.id === editingId ? { ...f, name: newFolderName } : f)); setIsEditFormModalOpen(false); setToast({ message: "Form updated", type: "success" }); } catch (err) { setToast({ message: "Update failed", type: "error" }); } finally { setIsProcessingAction(false); } }}><Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} autoFocus />{editingId && (<MetadataFooter createdAt={forms.find(f => f.id === editingId)?.createdAt} createdBy={forms.find(f => f.id === editingId)?.createdBy} />)}<div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsEditFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Changes</Button></div></form></Modal>
+      <Modal isOpen={isCreateFormModalOpen} onClose={() => setIsCreateFormModalOpen(false)} title="Initiate Form Protocol"><form onSubmit={async (e) => { e.preventDefault(); if (!newFolderName.trim()) return; setIsProcessingAction(true); try { const { data, error } = await supabase.from('forms').insert({ name: newFolderName, folder_id: currentFolderId, status: 'draft', created_by: user?.id }).select(`*, profiles!created_by ( username, full_name )`).single(); if (error) throw error; setForms(prev => [{ id: data.id, name: data.name, folderId: data.folder_id, webhookKey: data.webhook_key, webhookUrl: `${BASE_WEBHOOK_URL}?key=${data.webhook_key}`, fields: [], createdAt: data.created_at, status: 'draft', createdBy: data.profiles }, ...prev]); setIsCreateFormModalOpen(false); setNewFolderName(''); setCurrentFormId(data.id); setFormViewMode('builder'); } catch (err) { showToast("Creation failed", "error"); } finally { setIsProcessingAction(false); } }}><Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. Client Intake V1" autoFocus /><div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsCreateFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Initialize Form</Button></div></form></Modal>
+      <Modal isOpen={isEditFormModalOpen} onClose={() => { setIsEditFormModalOpen(false); setEditingId(null); setNewFolderName(''); }} title="Form Settings"><form onSubmit={async (e) => { e.preventDefault(); if (!newFolderName.trim() || !editingId) return; setIsProcessingAction(true); try { const { error } = await supabase.from('forms').update({ name: newFolderName }).eq('id', editingId); if (error) throw error; setForms(prev => prev.map(f => f.id === editingId ? { ...f, name: newFolderName } : f)); setIsEditFormModalOpen(false); showToast("Form updated", "success"); } catch (err) { showToast("Update failed", "error"); } finally { setIsProcessingAction(false); } }}><Input label="Form Name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} autoFocus />{editingId && (<MetadataFooter createdAt={forms.find(f => f.id === editingId)?.createdAt} createdBy={forms.find(f => f.id === editingId)?.createdBy} />)}<div className="mt-6 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsEditFormModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Changes</Button></div></form></Modal>
       <Modal isOpen={isMappingModalOpen} onClose={() => setIsMappingModalOpen(false)} title="Select Data Point"><div className="mb-4 relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" /><input type="text" className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none" placeholder="Search keys..." value={mappingSearchQuery} onChange={(e) => setMappingSearchQuery(e.target.value)} autoFocus /></div><div className="max-h-[300px] overflow-y-auto border border-gray-100 rounded-lg bg-gray-50 p-2">{renderMappingPicker()}</div></Modal>
       <Modal isOpen={deleteConfirmation.isOpen} onClose={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })} title="Confirm Termination"><div className="text-center p-4"><div className="bg-rose-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4"><AlertTriangle className="h-8 w-8 text-rose-600" /></div><h3 className="text-lg font-bold text-gray-900">Delete {deleteConfirmation.type === 'bulk' ? 'Selected Items' : 'Record'}?</h3><p className="text-sm text-gray-500 mt-2">This action is irreversible. All associated data will be incinerated.</p><div className="mt-8 flex justify-center gap-3"><Button variant="secondary" onClick={() => setDeleteConfirmation({ isOpen: false, id: null, type: 'credential' })}>Cancel</Button><Button variant="danger" onClick={confirmDelete} isLoading={isProcessingAction}>Confirm Deletion</Button></div></div></Modal>
       <Modal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} title={`Move ${selectedItems.size} Item(s)`}><div className="space-y-4"><div className="p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors flex items-center" onClick={() => setMoveTargetFolderId(null)}><Home className="h-5 w-5 text-gray-400 mr-3" /><span className="text-sm font-medium text-gray-700">Vault Root</span>{moveTargetFolderId === null && <CheckCircle2 className="h-4 w-4 ml-auto text-indigo-600" />}</div><div className="max-h-[200px] overflow-y-auto space-y-2">{folders.filter(f => !selectedItems.has(f.id) && f.type === (activeMainTab === 'credentials' ? 'credential' : 'form')).map(f => (<div key={f.id} onClick={() => setMoveTargetFolderId(f.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center transition-colors ${moveTargetFolderId === f.id ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200 hover:border-gray-300'}`}><Folder className={`h-5 w-5 mr-3 ${moveTargetFolderId === f.id ? 'text-indigo-500' : 'text-gray-400'}`} /><span className={`text-sm font-medium ${moveTargetFolderId === f.id ? 'text-indigo-900' : 'text-gray-700'}`}>{f.name}</span>{moveTargetFolderId === f.id && <CheckCircle2 className="h-4 w-4 ml-auto text-indigo-600" />}</div>))}</div><div className="pt-4 flex justify-end gap-3 border-t border-gray-100"><Button variant="secondary" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button><Button onClick={handleBulkMove} isLoading={isProcessingAction}>Move Items</Button></div></div></Modal>
-      <Modal isOpen={isAddModalOpen || !!editingId} onClose={() => { setIsAddModalOpen(false); setEditingId(null); setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null }); setShowCrmDropdown(false); }} title={editingId ? 'Edit Credential' : 'Add Credential'}><form onSubmit={async (e) => { e.preventDefault(); setIsProcessingAction(true); try { const payload = { client_name: newCred.clientName, service_name: newCred.serviceName, crm_link: newCred.crmLink, username: newCred.username, password: newCred.password, folder_id: currentFolderId || newCred.folderId }; if (editingId) { const { error } = await supabase.from('credentials').update({ ...payload, last_updated: new Date() }).eq('id', editingId); if (error) throw error; setCredentials(prev => prev.map(c => c.id === editingId ? { ...c, ...payload, id: editingId, lastUpdated: new Date() } : c)); } else { const { data, error } = await supabase.from('credentials').insert({ ...payload, created_by: user?.id }).select(`*, profiles!created_by ( username, full_name )`).single(); if (error) throw error; setCredentials(prev => [{ id: data.id, clientName: data.client_name, serviceName: data.service_name, crmLink: data.crm_link, username: data.username, password: data.password, lastUpdated: new Date(data.created_at), folderId: data.folder_id, createdAt: data.created_at, createdBy: data.profiles }, ...prev]); } setToast({ message: "Credential Saved", type: "success" }); setIsAddModalOpen(false); setEditingId(null); setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null }); } catch(err) { setToast({ message: "Operation failed", type: "error" }); } finally { setIsProcessingAction(false); } }}><div className="space-y-4"><Input label="Client Name" value={newCred.clientName} onChange={e => setNewCred({...newCred, clientName: e.target.value})} required /><div className="relative" ref={crmDropdownRef}><Input label="Service / CRM" value={newCred.serviceName} onChange={e => setNewCred({...newCred, serviceName: e.target.value})} onFocus={() => setShowCrmDropdown(true)} required /><AnimatePresence>{showCrmDropdown && (<div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto overflow-x-hidden animate-fade-in">{COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).map(service => (<div key={service} onClick={() => { setNewCred({...newCred, serviceName: service}); setShowCrmDropdown(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 flex items-center transition-colors"><Briefcase className="w-3.5 h-3.5 mr-2 text-gray-400" />{service}</div>))}{COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).length === 0 && (<div className="px-4 py-2 text-xs text-gray-400 italic">Type to add custom service...</div>)}</div>)}</AnimatePresence></div><Input label="Link" value={newCred.crmLink} onChange={e => setNewCred({...newCred, crmLink: e.target.value})} /><div className="grid grid-cols-2 gap-4"><Input label="Username" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} /><Input label="Password" type="text" value={newCred.password} onChange={e => setNewCred({...newCred, password: e.target.value})} /></div>{editingId && (<MetadataFooter createdAt={credentials.find(c => c.id === editingId)?.createdAt} createdBy={credentials.find(c => c.id === editingId)?.createdBy} />)}<div className="pt-4 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => { setIsAddModalOpen(false); setEditingId(null); }}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Record</Button></div></div></form></Modal>
+      <Modal isOpen={isAddModalOpen || !!editingId} onClose={() => { setIsAddModalOpen(false); setEditingId(null); setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null }); setShowCrmDropdown(false); }} title={editingId ? 'Edit Credential' : 'Add Credential'}><form onSubmit={async (e) => { e.preventDefault(); setIsProcessingAction(true); try { const payload = { client_name: newCred.clientName, service_name: newCred.serviceName, crm_link: newCred.crmLink, username: newCred.username, password: newCred.password, folder_id: currentFolderId || newCred.folderId }; if (editingId) { const { error } = await supabase.from('credentials').update({ ...payload, last_updated: new Date() }).eq('id', editingId); if (error) throw error; setCredentials(prev => prev.map(c => c.id === editingId ? { ...c, ...payload, id: editingId, lastUpdated: new Date() } : c)); } else { const { data, error } = await supabase.from('credentials').insert({ ...payload, created_by: user?.id }).select(`*, profiles!created_by ( username, full_name )`).single(); if (error) throw error; setCredentials(prev => [{ id: data.id, clientName: data.client_name, serviceName: data.service_name, crmLink: data.crm_link, username: data.username, password: data.password, lastUpdated: new Date(data.created_at), folderId: data.folder_id, createdAt: data.created_at, createdBy: data.profiles }, ...prev]); } showToast("Credential Saved", "success"); setIsAddModalOpen(false); setEditingId(null); setNewCred({ clientName: '', serviceName: '', crmLink: '', username: '', password: '', folderId: null }); } catch(err) { showToast("Operation failed", "error"); } finally { setIsProcessingAction(false); } }}><div className="space-y-4"><Input label="Client Name" value={newCred.clientName} onChange={e => setNewCred({...newCred, clientName: e.target.value})} required /><div className="relative" ref={crmDropdownRef}><Input label="Service / CRM" value={newCred.serviceName} onChange={e => setNewCred({...newCred, serviceName: e.target.value})} onFocus={() => setShowCrmDropdown(true)} required /><AnimatePresence>{showCrmDropdown && (<div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto overflow-x-hidden animate-fade-in">{COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).map(service => (<div key={service} onClick={() => { setNewCred({...newCred, serviceName: service}); setShowCrmDropdown(false); }} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 flex items-center transition-colors"><Briefcase className="w-3.5 h-3.5 mr-2 text-gray-400" />{service}</div>))}{COMMON_SERVICES.filter(s => s.toLowerCase().includes(newCred.serviceName.toLowerCase())).length === 0 && (<div className="px-4 py-2 text-xs text-gray-400 italic">Type to add custom service...</div>)}</div>)}</AnimatePresence></div><Input label="Link" value={newCred.crmLink} onChange={e => setNewCred({...newCred, crmLink: e.target.value})} /><div className="grid grid-cols-2 gap-4"><Input label="Username" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} /><Input label="Password" type="text" value={newCred.password} onChange={e => setNewCred({...newCred, password: e.target.value})} /></div>{editingId && (<MetadataFooter createdAt={credentials.find(c => c.id === editingId)?.createdAt} createdBy={credentials.find(c => c.id === editingId)?.createdBy} />)}<div className="pt-4 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => { setIsAddModalOpen(false); setEditingId(null); }}>Cancel</Button><Button type="submit" isLoading={isProcessingAction}>Save Record</Button></div></div></form></Modal>
       <Modal isOpen={isDeleteRecordModalOpen} onClose={() => setIsDeleteRecordModalOpen(false)} title="Delete Submission"><div className="text-center p-4"><p className="text-gray-600 mb-6">Are you sure you want to delete this submission record?</p><div className="flex justify-center gap-3"><Button variant="secondary" onClick={() => setIsDeleteRecordModalOpen(false)}>Cancel</Button><Button variant="danger" onClick={handleDeleteSubmission} isLoading={isProcessingAction}>Delete</Button></div></div></Modal>
 
       {/* --- Floating Bottom Navigation --- */}

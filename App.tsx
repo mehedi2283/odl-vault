@@ -162,9 +162,7 @@ const App: React.FC = () => {
         <Route
           element={
             <ProtectedRoute isAuthenticated={!!user}>
-              <Layout onLogout={handleLogout} user={user}>
-                <Outlet />
-              </Layout>
+              <Layout onLogout={handleLogout} user={user} />
             </ProtectedRoute>
           }
         >

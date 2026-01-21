@@ -1,22 +1,20 @@
-// ... (imports remain unchanged)
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { 
   Users as UsersIcon, Search, Shield, ShieldAlert, 
   Loader2, Crown, Mail, Calendar, User as UserIcon, Lock, 
   CheckCircle2, UserCog, Pencil, Key, X, Save,
   Terminal, Database, Copy,
-  ShieldCheck, Clock
+  ShieldCheck, Clock, Trash2, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../services/supabase';
-import { User } from '../types';
-import Toast from '../components/Toast';
+import { User, ToastContextType } from '../types';
 import Modal from '../components/Modal';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { useOnlineUsers } from '../components/PresenceProvider';
 
-// ... (CONSTANTS remain unchanged)
 const EDGE_FUNCTION_TEMPLATE = `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
@@ -86,6 +84,9 @@ serve(async (req) => {
 const SQL_TEMPLATE = `-- ⚠️ CRITICAL UPDATE: Run this to add metadata columns
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen timestamp with time zone;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone;
+-- NEW: Seen Status Column
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS seen_by jsonb default '[]'::jsonb;
+
 ALTER TABLE public.credentials ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
 ALTER TABLE public.folders ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
 ALTER TABLE public.forms ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id);
@@ -163,6 +164,8 @@ create table if not exists public.messages (
 
 -- Ensure updated_at exists (Migration)
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone;
+-- Ensure seen_by exists (Migration)
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS seen_by jsonb default '[]'::jsonb;
 
 -- 6. Dead Drops (ENHANCED SCHEMA)
 create table if not exists public.dead_drops (
@@ -203,7 +206,8 @@ create policy "Public read dead_drops" on public.dead_drops for select to anon, 
 create policy "Public delete dead_drops" on public.dead_drops for delete to anon, authenticated using (true);
 -- IMPORTANT: Allow profile updates for Last Seen
 create policy "Users can update own profile" on public.profiles for update to authenticated using (auth.uid() = id);
-
+-- Allow updating messages (for edits and seen status)
+create policy "Authenticated users can update messages" on public.messages for update to authenticated using (true) with check (true);
 
 -- 9. Role Update Function (Standard)
 create or replace function public.update_user_role(
@@ -238,6 +242,11 @@ grant execute on function public.update_user_role(uuid, text) to service_role;
 
 -- 10. Bootstrap Admin
 update public.profiles set role = 'grand_admin' where username = 'babu.octopidigital@gmail.com';
+
+-- 11. POLICY UPDATES FOR GRAND ADMIN DELETION (Run if deletion fails)
+-- create policy "Grand Admin Manage Credentials" on public.credentials for all using (auth.uid() in (select id from public.profiles where role = 'grand_admin'));
+-- create policy "Grand Admin Manage Folders" on public.folders for all using (auth.uid() in (select id from public.profiles where role = 'grand_admin'));
+-- create policy "Grand Admin Manage Forms" on public.forms for all using (auth.uid() in (select id from public.profiles where role = 'grand_admin'));
 `;
 
 interface UsersPageProps {
@@ -254,10 +263,10 @@ interface Profile {
 }
 
 const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
+  const { showToast } = useOutletContext<ToastContextType>();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   
   // Presence from Context
@@ -268,6 +277,10 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [formData, setFormData] = useState({ fullName: '', password: '' });
   const [isSaving, setIsSaving] = useState(false);
+
+  // Deletion State
+  const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // System Access Modals
   const [isEdgeCodeModalOpen, setIsEdgeCodeModalOpen] = useState(false);
@@ -296,7 +309,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
       setProfiles(sortedData);
     } catch (error) {
       console.error('Error fetching profiles:', error);
-      if (showLoading) setToast({ message: "Failed to load operative list.", type: "error" });
+      if (showLoading) showToast("Failed to load operative list.", "error");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -316,13 +329,13 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
     // Frontend Check: Double check permissions before sending request
     const myRole = currentUser.role;
     if (myRole !== 'grand_admin' && myRole !== 'master_admin') {
-        setToast({ message: "Unauthorized action.", type: "error" });
+        showToast("Unauthorized action.", "error");
         return;
     }
     
     // Master Admin cannot promote to Master Admin
     if (myRole === 'master_admin' && newRole === 'master_admin') {
-        setToast({ message: "Master Admins cannot grant Master Admin access.", type: "error" });
+        showToast("Master Admins cannot grant Master Admin access.", "error");
         return;
     }
 
@@ -337,7 +350,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
         if (error) throw error;
         
         setProfiles(prev => prev.map(p => p.id === userId ? { ...p, role: newRole } : p));
-        setToast({ message: `Clearance updated to ${newRole.replace('_', ' ').toUpperCase()}.`, type: "success" });
+        showToast(`Clearance updated to ${newRole.replace('_', ' ').toUpperCase()}.`, "success");
     } catch (error: any) {
         console.error("Role update error details:", error);
         
@@ -364,7 +377,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
            msg = "Database Error: Role definitions are outdated. Please run the SQL setup script to update constraints.";
         }
         
-        setToast({ message: msg, type: "error" });
+        showToast(msg, "error");
     } finally {
         setUpdatingId(null);
     }
@@ -397,26 +410,63 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                   if (authError) throw authError;
                   passMsg = ' and password';
               } else {
-                  setToast({ message: "Name updated. Only the user can reset their own password.", type: "success" });
+                  showToast("Name updated. Only the user can reset their own password.", "success");
                   fetchProfiles(false);
                   setIsEditModalOpen(false);
                   return;
               }
           }
 
-          setToast({ message: `Operative profile${passMsg} updated.`, type: "success" });
+          showToast(`Operative profile${passMsg} updated.`, "success");
           fetchProfiles(false);
           setIsEditModalOpen(false);
       } catch (err: any) {
-          setToast({ message: err.message || "Update failed.", type: "error" });
+          showToast(err.message || "Update failed.", "error");
       } finally {
           setIsSaving(false);
       }
   };
 
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
+    try {
+        const uid = userToDelete.id;
+
+        // 1. Unlink resources (Set created_by to NULL to preserve data but remove ownership constraint)
+        // This is crucial because "ON DELETE CASCADE" is often not set for created_by
+        await Promise.all([
+            supabase.from('credentials').update({ created_by: null }).eq('created_by', uid),
+            supabase.from('folders').update({ created_by: null }).eq('created_by', uid),
+            supabase.from('forms').update({ created_by: null }).eq('created_by', uid),
+        ]);
+
+        // 2. Delete messages (Messages are strictly tied to user_id)
+        // We delete them to ensure clean removal and avoid constraints if any.
+        await supabase.from('messages').delete().eq('user_id', uid);
+
+        // 3. Delete the profile
+        const { error } = await supabase.from('profiles').delete().eq('id', uid);
+        if (error) throw error;
+        
+        setProfiles(prev => prev.filter(p => p.id !== uid));
+        showToast(`Operative ${userToDelete.username} deleted. Resources unlinked.`, "success");
+        setUserToDelete(null);
+    } catch (err: any) {
+         console.error("Delete Error:", err);
+         if (err.code === '23503') {
+             showToast("Critical Error: Database constraints prevent deletion. Manual cleanup required.", "error");
+         } else {
+             showToast(err.message || "Failed to delete user.", "error");
+         }
+    } finally {
+        setIsDeleting(false);
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    setToast({ message: "Copied to clipboard", type: "success" });
+    showToast("Copied to clipboard", "success");
   };
 
   const filteredProfiles = profiles.filter(p => 
@@ -443,8 +493,6 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
 
   return (
     <div className="space-y-6 pb-24">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
@@ -514,7 +562,9 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                  let canEditRole = false;
                                  if (amIGrandAdmin && !isLocked) canEditRole = true;
                                  else if (amIMasterAdmin && !isLocked && targetRole !== 'master_admin') canEditRole = true;
-                                 const canEditProfile = isMe || (amIGrandAdmin && !isLocked) || (amIMasterAdmin && !isLocked);
+                                 
+                                 // STRICT REQUIREMENT: Only the user can edit their own profile details (Name/Pass)
+                                 const canEditProfile = isMe;
 
                                  return (
                                      <motion.tr 
@@ -539,10 +589,20 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                                  </div>
                                                  <div className="min-w-0">
                                                      <div className="flex items-center gap-2">
-                                                         <span className="font-semibold text-gray-900 truncate">{profile.username}</span>
+                                                         <span className="font-semibold text-gray-900 truncate">
+                                                             {profile.full_name || profile.username}
+                                                         </span>
                                                          {isMe && <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-wide border border-indigo-100 flex-shrink-0">You</span>}
                                                          {canEditProfile && (<button onClick={() => openEditModal(profile)} className="ml-2 p-1 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100" title="Edit Profile"><Pencil className="w-3.5 h-3.5" /></button>)}
                                                      </div>
+                                                     
+                                                     {/* Show email (username) if full name is present and different from name */}
+                                                     {profile.full_name && (
+                                                         <div className="text-xs text-gray-500 truncate leading-tight mt-0.5">
+                                                             {profile.username}
+                                                         </div>
+                                                     )}
+
                                                      <div className="flex items-center mt-1 text-xs text-gray-400">
                                                         {isOnline ? (
                                                             <div className="flex items-center text-emerald-600 font-medium">
@@ -583,6 +643,16 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                                      <button onClick={() => handleRoleUpdate(profile.id, 'user')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${profile.role === 'user' ? 'bg-white text-gray-800 shadow-sm ring-1 ring-black/5' : 'text-gray-400 hover:text-gray-600 hover:bg-black/5'}`} title="Operative"><UserIcon className="w-4 h-4" /></button>
                                                  </div>
                                              )}
+                                             
+                                             {amIGrandAdmin && !isMe && (
+                                                <button 
+                                                    onClick={() => setUserToDelete(profile)} 
+                                                    className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-100" 
+                                                    title="Delete Operative"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                             )}
                                             </div>
                                          </td>
                                      </motion.tr>
@@ -616,6 +686,24 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
             </div>
             <div className="pt-4 flex justify-end gap-3"><Button type="button" variant="secondary" onClick={() => setIsEditModalOpen(false)}>Cancel</Button><Button type="submit" isLoading={isSaving}><Save className="w-4 h-4 mr-2" />Save Changes</Button></div>
         </form>
+      </Modal>
+      
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={!!userToDelete} onClose={() => setUserToDelete(null)} title="Confirm Deletion">
+        <div className="text-center p-4">
+             <div className="bg-rose-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                 <AlertTriangle className="h-8 w-8 text-rose-600" />
+             </div>
+             <h3 className="text-lg font-bold text-gray-900">Delete Operative?</h3>
+             <p className="text-sm text-gray-500 mt-2 mb-6">
+                 Are you sure you want to remove <span className="font-bold text-gray-800">{userToDelete?.username}</span>? 
+                 <br/><span className="text-xs">This action removes their profile metadata.</span>
+             </p>
+             <div className="flex justify-center gap-3">
+                 <Button variant="secondary" onClick={() => setUserToDelete(null)}>Cancel</Button>
+                 <Button variant="danger" onClick={handleDeleteUser} isLoading={isDeleting}>Confirm Deletion</Button>
+             </div>
+        </div>
       </Modal>
 
       <Modal isOpen={isEdgeCodeModalOpen} onClose={() => setIsEdgeCodeModalOpen(false)} title="Edge Function Index Code">

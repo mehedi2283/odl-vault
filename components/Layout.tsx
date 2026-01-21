@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { NavLink, useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { AnimatePresence } from 'framer-motion';
 import { LayoutDashboard, LogOut, Menu, X, Crown, MessageSquare, Flame, Box, Users } from 'lucide-react';
-import { RoutePath, User } from '../types';
+import { RoutePath, User, ToastContextType } from '../types';
 import CommandPalette from './CommandPalette';
 import InactivityLock from './InactivityLock';
 import StealthMode from './StealthMode';
@@ -10,21 +12,45 @@ import { supabase } from '../services/supabase';
 import { PresenceProvider } from './PresenceProvider';
 
 interface LayoutProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onLogout: () => void;
   user: User | null;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
+interface ToastData {
+  id: string;
+  title?: string;
+  message: string;
+  type?: 'success' | 'error' | 'info' | 'mention';
+  role?: string;
+}
+
+const Layout: React.FC<LayoutProps> = ({ onLogout, user }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   
-  // Updated Toast State to support roles
-  const [toast, setToast] = useState<{ title?: string; message: string; type?: 'success' | 'error'; role?: string } | null>(null);
+  // Unified Toast State
+  const [toasts, setToasts] = useState<ToastData[]>([]);
   
   const navigate = useNavigate();
   const location = useLocation();
   const locationRef = useRef(location);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Helper to add toast - Exposed via Context
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'mention' = 'success', title?: string) => {
+      const id = crypto.randomUUID();
+      setToasts(prev => [...prev, { id, message, title, type, role: undefined }]);
+  }, []);
+
+  // Internal helper for chat notifications (includes role)
+  const addChatToast = useCallback((message: string, title?: string, role?: string, type: 'success' | 'mention' = 'success') => {
+      const id = crypto.randomUUID();
+      setToasts(prev => [...prev, { id, message, title, role, type }]);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   // Keep ref updated for event listener access
   useEffect(() => {
@@ -51,7 +77,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
     };
   }, []);
 
-  const playNotificationSound = async () => {
+  const playNotificationSound = async (isMention = false) => {
       try {
         if (!audioContextRef.current) return;
         const ctx = audioContextRef.current;
@@ -62,15 +88,30 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
         osc.connect(gain);
         gain.connect(ctx.destination);
         
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(130.81, ctx.currentTime + 0.3);
-        
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        
-        osc.start();
-        osc.stop(ctx.currentTime + 0.3);
+        if (isMention) {
+            // High pitch double beep for mentions
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+            osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+            osc.frequency.setValueAtTime(1108, ctx.currentTime + 0.15); // C#6
+            
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            
+            osc.start();
+            osc.stop(ctx.currentTime + 0.4);
+        } else {
+            // Standard blob sound
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(130.81, ctx.currentTime + 0.3);
+            
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+            
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+        }
       } catch (e) { /* ignore audio errors */ }
   };
 
@@ -87,9 +128,18 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
 
                   const isChatOpen = locationRef.current.pathname === '/chat';
                   const isHidden = document.hidden; 
+                  
+                  // Check for Mention
+                  const content = payload.new.content || '';
+                  
+                  // Support both @username and @Full_Name
+                  const usernameTag = `@${user.username}`;
+                  const nameTag = user.full_name ? `@${user.full_name.trim().replace(/\s+/g, '_')}` : null;
 
-                  // If user is actively looking at chat, do nothing
-                  if (isChatOpen && !isHidden) return;
+                  const isMentioned = content.includes(usernameTag) || (!!nameTag && content.includes(nameTag));
+
+                  // If user is actively looking at chat AND not mentioned, do nothing
+                  if (isChatOpen && !isHidden && !isMentioned) return;
 
                   // 1. Fetch Sender Details (Name AND Role)
                   const { data: sender } = await supabase
@@ -100,24 +150,25 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
                   
                   const senderName = sender?.full_name || sender?.username || 'Secure Channel';
                   const senderRole = sender?.role || 'user';
-                  const msgPreview = payload.new.content || 'Encrypted Message';
+                  const msgPreview = content.length > 50 ? content.substring(0, 50) + '...' : content;
 
                   // 2. Play Sound
-                  playNotificationSound();
+                  playNotificationSound(isMentioned);
 
                   // 3. System Notification
                   if (Notification.permission === 'granted') {
                       try {
-                          // Format: [Role] Name: Message
                           const roleLabel = senderRole === 'grand_admin' ? 'Grand Admin' : 
                                             senderRole === 'master_admin' ? 'Master Admin' :
                                             senderRole === 'admin' ? 'Admin' : 'Operative';
+                          
+                          const title = isMentioned ? `[MENTIONED] ${senderName}` : `[${roleLabel}] ${senderName}`;
 
-                          const notif = new Notification(`[${roleLabel}] ${senderName}`, {
+                          const notif = new Notification(title, {
                               body: msgPreview,
                               tag: 'odl-chat',
                               icon: '/favicon.ico',
-                              requireInteraction: true 
+                              requireInteraction: isMentioned 
                           });
                           notif.onclick = () => {
                               window.focus();
@@ -129,19 +180,14 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
                       }
                   }
 
-                  // 4. In-App Toast (Pass Role for Coloring)
-                  if (!isChatOpen) {
-                      setToast({ 
-                          title: senderName,
-                          message: msgPreview, 
-                          role: senderRole,
-                          type: 'success'
-                      });
+                  // 4. In-App Toast
+                  if (!isChatOpen || isMentioned) {
+                      addChatToast(msgPreview, senderName, senderRole, isMentioned ? 'mention' : 'success');
                   }
 
                   // 5. Title Alert
                   const originalTitle = document.title;
-                  document.title = `(1) New Message`;
+                  document.title = isMentioned ? `(!) YOU WERE MENTIONED` : `(1) New Message`;
                   setTimeout(() => document.title = originalTitle, 5000);
               }
           )
@@ -150,7 +196,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
       return () => {
           supabase.removeChannel(channel);
       };
-  }, [user, navigate]);
+  }, [user, navigate, addChatToast]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
@@ -184,17 +230,30 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
 
   const displayName = user?.full_name || user?.username || 'User';
 
+  const contextValue: ToastContextType = { showToast };
+
   return (
     <PresenceProvider user={user}>
         <div className="h-screen bg-gray-50 flex font-sans text-gray-900 overflow-hidden">
-        {toast && (
-            <Toast 
-                title={toast.title}
-                message={toast.message} 
-                type={toast.type} 
-                role={toast.role}
-                onClose={() => setToast(null)} 
-            />
+        
+        {/* Portal for Stacked Toasts */}
+        {createPortal(
+            <div className="fixed bottom-6 right-6 z-[10001] flex flex-col gap-2 pointer-events-none items-end w-full max-w-sm">
+                <AnimatePresence mode="popLayout">
+                    {toasts.map((t) => (
+                        <Toast 
+                            key={t.id}
+                            title={t.title}
+                            message={t.message} 
+                            type={t.type} 
+                            role={t.role}
+                            inline={true} // Important: Use inline mode for list rendering
+                            onClose={() => removeToast(t.id)} 
+                        />
+                    ))}
+                </AnimatePresence>
+            </div>,
+            document.body
         )}
         
         <CommandPalette onLogout={onLogout} />
@@ -296,7 +355,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onLogout, user }) => {
             <main className="flex-1 overflow-y-auto p-4 sm:p-8">
             <div className="max-w-7xl mx-auto">
                 <div key={location.pathname} className="animate-fade-in-up">
-                    {children}
+                    <Outlet context={contextValue} />
                 </div>
             </div>
             </main>

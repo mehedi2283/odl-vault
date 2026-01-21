@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useOutletContext } from 'react-router-dom';
 import { 
   Flame, Copy, Link as LinkIcon, AlertTriangle, 
   Terminal, ShieldCheck, Lock, ArrowRight, RefreshCw,
   Files as FilesIcon
 } from 'lucide-react';
 import Button from '../components/Button';
-import Toast from '../components/Toast';
 import { supabase } from '../services/supabase';
+import { ToastContextType } from '../types';
 
 // --- CRYPTO UTILS ---
 const generateKey = async () => {
@@ -39,13 +40,13 @@ const encryptPayload = async (payload: object, key: CryptoKey) => {
 };
 
 const DeadDropPage: React.FC = () => {
+  const { showToast } = useOutletContext<ToastContextType>();
   const [message, setMessage] = useState('');
   const [isBurnEnabled, setIsBurnEnabled] = useState(true);
   const [allowCopy, setAllowCopy] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +105,7 @@ const DeadDropPage: React.FC = () => {
           
           setGeneratedLink(link);
           setMessage('');
-          setToast({ message: "Payload secured. Link generated.", type: 'success' });
+          showToast("Payload secured. Link generated.", "success");
       }
 
     } catch (err: any) {
@@ -122,7 +123,7 @@ const DeadDropPage: React.FC = () => {
   const copyLink = () => {
       if (generatedLink) {
           navigator.clipboard.writeText(generatedLink);
-          setToast({ message: "Secure link copied to clipboard", type: "success" });
+          showToast("Secure link copied to clipboard", "success");
       }
   };
 
@@ -136,8 +137,6 @@ const DeadDropPage: React.FC = () => {
 
   return (
     <div className="min-h-[calc(100vh-100px)] flex flex-col items-center justify-center p-4 relative font-sans">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
       {/* Decorative Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-0 right-0 h-96 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/50 via-white to-transparent"></div>
@@ -166,8 +165,9 @@ const DeadDropPage: React.FC = () => {
 
         {/* Main Card */}
         <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
+            initial={{ y: 10, opacity: 0, scale: 0.98 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
             className="bg-white rounded-3xl shadow-2xl shadow-indigo-500/10 border border-gray-100 overflow-hidden relative"
         >
            
