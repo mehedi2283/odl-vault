@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Send, Lock, Shield, User as UserIcon, Crown, ShieldCheck, ShieldAlert, Bell, BellOff, RefreshCw, Smile, Edit2, X, Check, Users, AtSign, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Send, Lock, Shield, User as UserIcon, Crown, ShieldCheck, ShieldAlert, Bell, BellOff, RefreshCw, Smile, Edit2, X, Check, MoreHorizontal, Calendar, Clock, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import Button from '../components/Button';
+import Modal from '../components/Modal';
 import { supabase } from '../services/supabase';
 import { ChatMessage, User, ToastContextType } from '../types';
 import { useOnlineUsers } from '../components/PresenceProvider';
@@ -12,9 +13,14 @@ interface ChatPageProps {
   user: User | null;
 }
 
-// Extends ChatMessage to include seen_by if not already in base type
-interface EnrichedChatMessage extends ChatMessage {
-    seen_by?: string[]; // Array of user IDs who have seen the message
+interface SeenEntry {
+  user_id: string;
+  seen_at: string;
+}
+
+// Extends ChatMessage to include enriched seen_by
+interface EnrichedChatMessage extends Omit<ChatMessage, 'seen_by'> {
+    seen_by?: (string | SeenEntry)[]; // Supports legacy string[] and new SeenEntry[]
 }
 
 interface BasicProfile {
@@ -24,7 +30,17 @@ interface BasicProfile {
 }
 
 const PAGE_SIZE = 20;
-const EDIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Helper to safely extract User ID from mixed seen_by types
+const getSeenUserId = (entry: string | SeenEntry): string => {
+    return typeof entry === 'string' ? entry : entry.user_id;
+};
+
+// Helper to safely extract timestamp from mixed seen_by types
+const getSeenTime = (entry: string | SeenEntry): string | null => {
+    return typeof entry === 'string' ? null : entry.seen_at;
+};
 
 // Helper for Smart Date Grouping
 const getDateLabel = (dateString: string) => {
@@ -70,7 +86,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
   // Input State (ContentEditable)
-  const [inputHtml, setInputHtml] = useState(''); // Just for trigger, not strictly bound
   const [plainText, setPlainText] = useState(''); // For validation
   
   // Mention State
@@ -90,6 +105,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const editInputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Message Details Modal State
+  const [detailsMessage, setDetailsMessage] = useState<EnrichedChatMessage | null>(null);
   
   // Emoji State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -226,26 +244,36 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   // --- Seen Logic ---
   const markMessagesAsSeen = async (msgs: EnrichedChatMessage[]) => {
       if (!user) return;
-      if (document.hidden) return; // Don't mark if tab hidden
+      if (document.hidden) return; 
 
+      // Find messages not sent by me and not seen by me
       const unseenIds = msgs
-        .filter(m => m.user_id !== user.id && (!m.seen_by || !m.seen_by.includes(user.id)))
+        .filter(m => {
+            if (m.user_id === user.id) return false;
+            // Handle both legacy string IDs and new objects
+            const seenIds = (m.seen_by || []).map(getSeenUserId);
+            return !seenIds.includes(user.id);
+        })
         .map(m => m.id);
 
       if (unseenIds.length === 0) return;
 
+      const now = new Date().toISOString();
+      const newEntry: SeenEntry = { user_id: user.id, seen_at: now };
+
       // Optimistic Update
       setMessages(prev => prev.map(m => {
           if (unseenIds.includes(m.id)) {
-              return { ...m, seen_by: [...(m.seen_by || []), user.id] };
+              return { ...m, seen_by: [...(m.seen_by || []), newEntry] };
           }
           return m;
       }));
 
-      // Batch Update in Supabase (requires loop or improved RPC, simple loop for now as volume low)
+      // Batch Update in Supabase
       for (const msgId of unseenIds) {
           const msg = msgs.find(m => m.id === msgId);
-          const newSeenBy = [...(msg?.seen_by || []), user.id];
+          const currentSeen = msg?.seen_by || [];
+          const newSeenBy = [...currentSeen, newEntry];
           
           await supabase
             .from('messages')
@@ -269,7 +297,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       }
 
       return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [messages.length, user?.id]); // Dep on length mainly
+  }, [messages.length, user?.id]);
 
   // Initial Load
   useEffect(() => {
@@ -360,14 +388,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           const range = sel.getRangeAt(0);
           const node = range.startContainer;
           
-          // Check if we are inside a text node
           if (node.nodeType === Node.TEXT_NODE && node.textContent) {
               const textBeforeCaret = node.textContent.substring(0, range.startOffset);
               const atIndex = textBeforeCaret.lastIndexOf('@');
               
               if (atIndex !== -1) {
                   const query = textBeforeCaret.substring(atIndex + 1);
-                  // Ensure no spaces in query and reasonable length
                   if (!query.includes(' ') && query.length < 30) {
                       setMentionQuery(query);
                       setShowMentionList(true);
@@ -381,9 +407,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   };
 
   const filteredMentions = useMemo(() => {
-      // Exclude self from mention list
       const availableProfiles = allProfiles.filter(p => p.id !== user?.id);
-      
       if (!mentionQuery) return availableProfiles.slice(0, 5);
       return availableProfiles.filter(p => 
           p.username.toLowerCase().includes(mentionQuery.toLowerCase()) || 
@@ -398,19 +422,15 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       const range = sel.getRangeAt(0);
       const node = range.startContainer;
 
-      // We need to find the text node where the @query is
       if (node.nodeType === Node.TEXT_NODE && node.textContent) {
           const currentPos = range.startOffset;
-          // Calculate start of @
           const startPos = currentPos - (mentionQuery.length + 1);
           
           if (startPos >= 0) {
-              // Delete the @query
               range.setStart(node, startPos);
               range.setEnd(node, currentPos);
               range.deleteContents();
 
-              // Create Chip
               const name = profile.full_name 
                 ? profile.full_name.trim().replace(/\s+/g, '_') 
                 : profile.username;
@@ -420,18 +440,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
               chip.contentEditable = "false";
               chip.textContent = `@${name}`;
 
-              const space = document.createTextNode('\u00A0'); // nbsp
+              const space = document.createTextNode('\u00A0');
 
               range.insertNode(space);
               range.insertNode(chip);
 
-              // Move caret after space
               range.setStartAfter(space);
               range.collapse(true);
               sel.removeAllRanges();
               sel.addRange(range);
               
-              // Cleanup
               setPlainText(inputDivRef.current?.innerText || '');
               setShowMentionList(false);
               
@@ -442,7 +460,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
 
   const insertEmoji = (emojiData: EmojiClickData) => {
       if (!inputDivRef.current) return;
-      inputDivRef.current.focus(); // Ensure focus
+      inputDivRef.current.focus();
 
       const sel = window.getSelection();
       if (sel && sel.rangeCount) {
@@ -457,7 +475,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           
           setPlainText(inputDivRef.current.innerText);
       } else {
-          // Fallback append
           inputDivRef.current.innerText += emojiData.emoji;
           setPlainText(inputDivRef.current.innerText);
       }
@@ -468,12 +485,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     if (e) e.preventDefault();
     if (!inputDivRef.current) return;
     
-    // Grab text from the DIV. The chips will be read as their textContent (@Name)
     const content = inputDivRef.current.innerText.trim();
     
     if (!content || !user) return;
     
-    // Clear Input
     inputDivRef.current.innerHTML = '';
     setPlainText('');
     setShowEmojiPicker(false);
@@ -489,7 +504,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         username: user.username,
         full_name: user.full_name,
         role: user.role,
-        seen_by: []
+        seen_by: [] // Initial seen by is empty
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
@@ -554,6 +569,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       return 'bg-gray-100 border-gray-200 text-gray-800 border rounded-2xl rounded-tl-sm shadow-sm';
   };
 
+  const getProfileName = (id: string) => {
+      if (id === user?.id) return 'You';
+      const p = allProfiles.find(p => p.id === id);
+      return p ? (p.full_name || p.username) : 'Unknown Agent';
+  };
+
   const RoleBadge = ({ role }: { role?: string }) => {
       const baseClasses = "flex items-center justify-center w-6 h-6 rounded-full shadow-sm border ring-2 ring-white";
       if (role === 'grand_admin') return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-amber-100 border-amber-200`}><Crown size={12} className="text-amber-600 fill-amber-600" /></div></div>;
@@ -567,7 +588,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       const parts = content.split(/(@[\w.@\-\']+)/g);
       return parts.map((part, i) => {
           if (part.startsWith('@')) {
-              // Simple check: is it longer than just @?
               if (part.length > 1) {
                   return (
                       <span key={i} className={`font-bold ${isMe ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white shadow-sm'} px-1.5 py-0.5 rounded-md mx-0.5 inline-block text-xs`}>
@@ -581,7 +601,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in subpixel-antialiased">
+    <div className="flex flex-col h-[calc(100vh-180px)] bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in subpixel-antialiased">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 p-5 flex items-center justify-between z-10">
         <div className="flex items-center space-x-4">
@@ -620,7 +640,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       <div 
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#f9fafb] relative scroll-smooth"
+        className="flex-1 overflow-y-auto p-6 pb-20 space-y-6 bg-[#f9fafb] relative scroll-smooth"
       >
         {isLoadingMore && <div className="flex justify-center py-2"><RefreshCw className="w-5 h-5 animate-spin text-gray-400" /></div>}
         {connectionError && <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20"><div className="bg-rose-50 text-rose-600 px-4 py-2 rounded-lg text-sm border border-rose-100 shadow-sm flex items-center"><AlertTriangle className="h-4 w-4 mr-2" />{connectionError}</div></div>}
@@ -635,11 +655,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           const dateLabel = getDateLabel(msg.created_at);
           const prevDateLabel = index > 0 ? getDateLabel(messages[index-1].created_at) : null;
           const showDateDivider = dateLabel !== prevDateLabel;
-          const canEdit = isMe && (Date.now() - new Date(msg.created_at).getTime() < EDIT_WINDOW_MS);
           const isEditing = editingId === msg.id;
 
           // Seen By Logic (excluding sender)
-          const seenCount = msg.seen_by?.filter(id => id !== msg.user_id)?.length || 0;
+          const seenCount = msg.seen_by?.filter(entry => getSeenUserId(entry) !== msg.user_id)?.length || 0;
           const showSeen = isMe && seenCount > 0;
 
           return (
@@ -666,7 +685,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                                         {msg.updated_at && <span className="italic opacity-80 mr-1" title={`Updated: ${new Date(msg.updated_at).toLocaleString()}`}>updated at {new Date(msg.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>}
                                         {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                     </div>
-                                    {canEdit && <button onClick={() => startEditing(msg)} className="absolute -left-8 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-white shadow-sm border border-gray-200 text-gray-400 hover:text-indigo-600 opacity-0 group-hover/msg:opacity-100 transition-all scale-90 hover:scale-100" title="Edit Message"><Edit2 size={12} /></button>}
+                                    <div className="absolute -left-12 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-all scale-90 group-hover/msg:scale-100">
+                                      {isMe && <button onClick={() => setDetailsMessage(msg)} className="p-1.5 rounded-full bg-white shadow-sm border border-gray-200 text-gray-400 hover:text-indigo-600 transition-colors" title="Message Details"><MoreHorizontal size={12} /></button>}
+                                    </div>
                                 </>
                             ) : (
                                 <div className="w-full min-w-[200px]">
@@ -687,7 +708,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                     {showSeen && (
                         <div className="flex items-center gap-1 mt-1 mr-1">
                             <CheckCircle2 className="w-3 h-3 text-indigo-400/70" />
-                            <span className="text-[9px] font-medium text-gray-400 cursor-help" title={msg.seen_by?.join(', ')}>Seen by {seenCount}</span>
+                            <span className="text-[9px] font-medium text-gray-400 cursor-default">Seen by {seenCount}</span>
                         </div>
                     )}
                   </div>
@@ -769,6 +790,111 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
             </Button>
         </form>
       </div>
+
+      {/* Message Details Modal */}
+      <Modal isOpen={!!detailsMessage} onClose={() => setDetailsMessage(null)} title="Message Details">
+         <div className="space-y-6">
+             <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                     <div className="flex items-center gap-2 mb-2 text-gray-500">
+                         <Calendar className="w-4 h-4" />
+                         <span className="text-xs font-bold uppercase tracking-wider">Sent</span>
+                     </div>
+                     <p className="text-sm font-semibold text-gray-900">
+                         {detailsMessage ? new Date(detailsMessage.created_at).toLocaleDateString() : '-'}
+                     </p>
+                     <p className="text-xs text-gray-400">
+                         {detailsMessage ? new Date(detailsMessage.created_at).toLocaleTimeString() : '-'}
+                     </p>
+                 </div>
+                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                     <div className="flex items-center gap-2 mb-2 text-gray-500">
+                         <Clock className="w-4 h-4" />
+                         <span className="text-xs font-bold uppercase tracking-wider">Edited</span>
+                     </div>
+                     <p className="text-sm font-semibold text-gray-900">
+                         {detailsMessage?.updated_at ? new Date(detailsMessage.updated_at).toLocaleDateString() : 'Never'}
+                     </p>
+                     {detailsMessage?.updated_at && (
+                        <p className="text-xs text-gray-400">
+                            {new Date(detailsMessage.updated_at).toLocaleTimeString()}
+                        </p>
+                     )}
+                 </div>
+             </div>
+
+             <div>
+                 <div className="flex items-center justify-between mb-3">
+                     <div className="flex items-center gap-2 text-gray-500">
+                         <Eye className="w-4 h-4" />
+                         <span className="text-xs font-bold uppercase tracking-wider">Read Receipts</span>
+                     </div>
+                     <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">
+                         {detailsMessage?.seen_by?.filter(entry => getSeenUserId(entry) !== user?.id).length || 0} Total
+                     </span>
+                 </div>
+                 
+                 <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm max-h-[200px] overflow-y-auto">
+                     {detailsMessage?.seen_by && detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).length > 0 ? (
+                         <div className="divide-y divide-gray-50">
+                             {detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).map((entry, idx) => {
+                                 const uid = getSeenUserId(entry);
+                                 const seenAt = getSeenTime(entry);
+                                 return (
+                                     <div key={idx} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+                                         <div className="flex items-center gap-3">
+                                             <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                                                 {getProfileName(uid)[0].toUpperCase()}
+                                             </div>
+                                             <span className="text-sm font-medium text-gray-700">{getProfileName(uid)}</span>
+                                         </div>
+                                         <div className="flex flex-col items-end">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-0.5" />
+                                            {seenAt && (
+                                                <>
+                                                    <span className="text-[10px] text-gray-400">{new Date(seenAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                                    <span className="text-[9px] text-gray-300">{new Date(seenAt).toLocaleDateString()}</span>
+                                                </>
+                                            )}
+                                         </div>
+                                     </div>
+                                 );
+                             })}
+                         </div>
+                     ) : (
+                         <div className="p-8 text-center text-gray-400">
+                             <Eye className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                             <p className="text-xs">Not seen by anyone yet.</p>
+                         </div>
+                     )}
+                 </div>
+             </div>
+             
+             <div className="flex gap-3 pt-6 mt-4 border-t border-gray-100">
+                 {detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) && (
+                    <button 
+                        onClick={() => {
+                            if (detailsMessage) startEditing(detailsMessage);
+                            setDetailsMessage(null);
+                        }}
+                        className="flex-1 flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5 active:translate-y-0"
+                    >
+                        <Edit2 className="w-4 h-4 mr-2" /> Edit Message
+                    </button>
+                 )}
+                 <button 
+                    onClick={() => setDetailsMessage(null)}
+                    className={`flex items-center justify-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold rounded-xl transition-all ${
+                        detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) 
+                        ? 'flex-1' 
+                        : 'w-full'
+                    }`}
+                >
+                    Close
+                </button>
+             </div>
+         </div>
+      </Modal>
     </div>
   );
 };
