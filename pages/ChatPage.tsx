@@ -9,6 +9,7 @@ import { ChatMessage, User, ToastContextType } from '../types';
 import { useOnlineUsers } from '../components/PresenceProvider';
 import { AnimatePresence, motion } from 'framer-motion';
 
+// ... (Rest of imports and interfaces same as before) ...
 interface ChatPageProps {
   user: User | null;
 }
@@ -18,9 +19,8 @@ interface SeenEntry {
   seen_at: string;
 }
 
-// Extends ChatMessage to include enriched seen_by
 interface EnrichedChatMessage extends Omit<ChatMessage, 'seen_by'> {
-    seen_by?: (string | SeenEntry)[]; // Supports legacy string[] and new SeenEntry[]
+    seen_by?: (string | SeenEntry)[]; 
 }
 
 interface BasicProfile {
@@ -32,17 +32,14 @@ interface BasicProfile {
 const PAGE_SIZE = 20;
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// Helper to safely extract User ID from mixed seen_by types
 const getSeenUserId = (entry: string | SeenEntry): string => {
     return typeof entry === 'string' ? entry : entry.user_id;
 };
 
-// Helper to safely extract timestamp from mixed seen_by types
 const getSeenTime = (entry: string | SeenEntry): string | null => {
     return typeof entry === 'string' ? null : entry.seen_at;
 };
 
-// Helper for Smart Date Grouping
 const getDateLabel = (dateString: string) => {
   const date = new Date(dateString);
   const now = new Date();
@@ -54,7 +51,6 @@ const getDateLabel = (dateString: string) => {
   if (msgDate.getTime() === today.getTime()) return "Today";
   if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
   
-  // Check if within last 7 days
   const diffTime = Math.abs(now.getTime() - date.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
   
@@ -62,10 +58,9 @@ const getDateLabel = (dateString: string) => {
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   }
   
-  return date.toLocaleDateString('en-GB'); // DD/MM/YYYY
+  return date.toLocaleDateString('en-GB'); 
 };
 
-// Helper for Last Seen
 const formatLastSeen = (dateString?: string) => {
     if (!dateString) return 'Offline';
     const date = new Date(dateString);
@@ -85,35 +80,31 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
-  // Input State (ContentEditable)
-  const [plainText, setPlainText] = useState(''); // For validation
+  const [plainText, setPlainText] = useState(''); 
   
-  // Mention State
   const [allProfiles, setAllProfiles] = useState<BasicProfile[]>([]);
   const [showMentionList, setShowMentionList] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [mentionIndex, setMentionIndex] = useState(0); // For keyboard nav
+  const [mentionIndex, setMentionIndex] = useState(0); 
 
-  // Presence from Context
   const onlineUsers = useOnlineUsers();
 
-  // Pagination State
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   
-  // Message Details Modal State
   const [detailsMessage, setDetailsMessage] = useState<EnrichedChatMessage | null>(null);
   
-  // Emoji State
+  const [isModalEditing, setIsModalEditing] = useState(false);
+  const [modalEditContent, setModalEditContent] = useState('');
+  const [showModalEmojiPicker, setShowModalEmojiPicker] = useState(false);
+  
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showEditEmojiPicker, setShowEditEmojiPicker] = useState(false);
   
-  // Notification Permission State
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     return 'Notification' in window && Notification.permission === 'granted';
   });
@@ -121,18 +112,17 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // Refs for Inputs
   const inputDivRef = useRef<HTMLDivElement>(null); 
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const editEmojiPickerRef = useRef<HTMLDivElement>(null);
   const mentionListRef = useRef<HTMLDivElement>(null);
+  const modalEmojiPickerRef = useRef<HTMLDivElement>(null);
+  const modalTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // --- Scroll Logic ---
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  // Fetch profiles for mentions
   useEffect(() => {
       const fetchProfiles = async () => {
           const { data } = await supabase.from('profiles').select('id, username, full_name');
@@ -141,7 +131,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       fetchProfiles();
   }, []);
 
-  // Handle outside click for pickers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
@@ -153,12 +142,22 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       if (mentionListRef.current && !mentionListRef.current.contains(event.target as Node)) {
           setShowMentionList(false);
       }
+      if (modalEmojiPickerRef.current && !modalEmojiPickerRef.current.contains(event.target as Node)) {
+        setShowModalEmojiPicker(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Auto-resize Edit Textarea
+  useEffect(() => {
+    if (!detailsMessage) {
+        setIsModalEditing(false);
+        setModalEditContent('');
+        setShowModalEmojiPicker(false);
+    }
+  }, [detailsMessage]);
+
   useLayoutEffect(() => {
     if (editInputRef.current) {
         editInputRef.current.style.height = 'auto';
@@ -166,7 +165,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     }
   }, [editContent, editingId]);
 
-  // Sync Notification Permission
   useEffect(() => {
     if ('permissions' in navigator) {
         navigator.permissions.query({ name: 'notifications' as PermissionName })
@@ -200,8 +198,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         showToast(notificationsEnabled ? "Notifications muted" : "Notifications active", "success");
     }
   };
-
-  // --- Data Fetching ---
 
   const mapMessage = (m: any): EnrichedChatMessage => ({
     id: m.id,
@@ -241,16 +237,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       return (data || []).map(mapMessage).reverse();
   };
 
-  // --- Seen Logic ---
   const markMessagesAsSeen = async (msgs: EnrichedChatMessage[]) => {
       if (!user) return;
       if (document.hidden) return; 
 
-      // Find messages not sent by me and not seen by me
       const unseenIds = msgs
         .filter(m => {
             if (m.user_id === user.id) return false;
-            // Handle both legacy string IDs and new objects
             const seenIds = (m.seen_by || []).map(getSeenUserId);
             return !seenIds.includes(user.id);
         })
@@ -261,7 +254,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       const now = new Date().toISOString();
       const newEntry: SeenEntry = { user_id: user.id, seen_at: now };
 
-      // Optimistic Update
       setMessages(prev => prev.map(m => {
           if (unseenIds.includes(m.id)) {
               return { ...m, seen_by: [...(m.seen_by || []), newEntry] };
@@ -269,7 +261,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           return m;
       }));
 
-      // Batch Update in Supabase
       for (const msgId of unseenIds) {
           const msg = msgs.find(m => m.id === msgId);
           const currentSeen = msg?.seen_by || [];
@@ -282,7 +273,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       }
   };
 
-  // Trigger mark seen when messages change or window focus
   useEffect(() => {
       const handleVisibilityChange = () => {
           if (!document.hidden) markMessagesAsSeen(messages);
@@ -290,16 +280,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       
       document.addEventListener('visibilitychange', handleVisibilityChange);
       
-      // Also trigger immediately on effect if visible
       if (!document.hidden && messages.length > 0) {
-          const timeout = setTimeout(() => markMessagesAsSeen(messages), 1000); // 1s delay to count as 'read'
+          const timeout = setTimeout(() => markMessagesAsSeen(messages), 1000); 
           return () => clearTimeout(timeout);
       }
 
       return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [messages.length, user?.id]);
 
-  // Initial Load
   useEffect(() => {
       if (!user) return;
       
@@ -309,13 +297,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           setMessages(initialMsgs);
           if (initialMsgs.length < PAGE_SIZE) setHasMore(false);
           setIsLoading(false);
-          // Wait for DOM paint then scroll
           setTimeout(() => scrollToBottom('auto'), 100);
       };
 
       loadInitial();
 
-      // Realtime Subscription
       const channel = supabase.channel('public:room_001')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
             const { data: profile } = await supabase.from('profiles').select('username, full_name, role, last_seen').eq('id', payload.new.user_id).maybeSingle();
@@ -353,7 +339,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       return () => { supabase.removeChannel(channel); };
   }, [user?.id]);
 
-  // Infinite Scroll Handler
   const handleScroll = async () => {
       if (!containerRef.current || isLoadingMore || !hasMore) return;
       if (containerRef.current.scrollTop === 0) {
@@ -375,14 +360,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       }
   };
 
-  // --- ContentEditable Helpers ---
   const handleInput = () => {
       if (!inputDivRef.current) return;
       
       const text = inputDivRef.current.innerText;
       setPlainText(text);
       
-      // Detect Mention
       const sel = window.getSelection();
       if (sel && sel.rangeCount > 0) {
           const range = sel.getRangeAt(0);
@@ -480,7 +463,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       }
   };
 
-  // --- Message Sending ---
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputDivRef.current) return;
@@ -541,7 +523,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
     }
   };
 
-  // ... (Edit handlers) ...
   const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (editingId) saveEdit(editingId); }
   };
@@ -557,7 +538,39 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
   };
   const onEditEmojiClick = (emojiData: EmojiClickData) => setEditContent(prev => prev + emojiData.emoji);
 
-  // --- Render Helpers ---
+  const handleSaveModalEdit = async () => {
+    if (!detailsMessage || !modalEditContent.trim()) return;
+    const now = new Date().toISOString();
+    
+    setMessages(prev => prev.map(m => m.id === detailsMessage.id ? { ...m, content: modalEditContent, updated_at: now } : m));
+    
+    setDetailsMessage(prev => prev ? { ...prev, content: modalEditContent, updated_at: now } : null);
+    setIsModalEditing(false);
+    
+    const { error } = await supabase.from('messages').update({ content: modalEditContent, updated_at: now }).eq('id', detailsMessage.id);
+    if (error) showToast("Failed to update message", "error");
+  };
+
+  const onModalEmojiClick = (emojiData: EmojiClickData) => {
+    if (!modalTextareaRef.current) return;
+    const start = modalTextareaRef.current.selectionStart;
+    const end = modalTextareaRef.current.selectionEnd;
+    const text = modalEditContent;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+    
+    const newText = before + emojiData.emoji + after;
+    setModalEditContent(newText);
+    
+    setTimeout(() => {
+        if(modalTextareaRef.current) {
+            modalTextareaRef.current.selectionStart = start + emojiData.emoji.length;
+            modalTextareaRef.current.selectionEnd = start + emojiData.emoji.length;
+            modalTextareaRef.current.focus();
+        }
+    }, 0);
+  };
+
   const getBubbleStyle = (role: string | undefined, userId: string, isMe: boolean) => {
       if (isMe) {
           if (role === 'grand_admin') return 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md shadow-orange-500/20 border-transparent rounded-2xl rounded-tr-sm';
@@ -583,7 +596,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       return <div className="absolute -top-3 -left-3 z-10 group"><div className={`${baseClasses} bg-white border-gray-200`}><UserIcon size={12} className="text-gray-400" /></div></div>;
   };
 
-  // Parse text for highlights
   const renderMessageContent = (content: string, isMe: boolean) => {
       const parts = content.split(/(@[\w.@\-\']+)/g);
       return parts.map((part, i) => {
@@ -657,7 +669,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
           const showDateDivider = dateLabel !== prevDateLabel;
           const isEditing = editingId === msg.id;
 
-          // Seen By Logic (excluding sender)
           const seenCount = msg.seen_by?.filter(entry => getSeenUserId(entry) !== msg.user_id)?.length || 0;
           const showSeen = isMe && seenCount > 0;
 
@@ -792,108 +803,171 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
       </div>
 
       {/* Message Details Modal */}
-      <Modal isOpen={!!detailsMessage} onClose={() => setDetailsMessage(null)} title="Message Details">
-         <div className="space-y-6">
-             <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                     <div className="flex items-center gap-2 mb-2 text-gray-500">
-                         <Calendar className="w-4 h-4" />
-                         <span className="text-xs font-bold uppercase tracking-wider">Sent</span>
+      <Modal isOpen={!!detailsMessage} onClose={() => setDetailsMessage(null)} title={isModalEditing ? "Edit Message" : "Message Details"}>
+             <AnimatePresence mode="popLayout" initial={false}>
+                {!isModalEditing ? (
+                 <motion.div 
+                    key="details"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-6"
+                 >
+                     <div className="grid grid-cols-2 gap-4">
+                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                             <div className="flex items-center gap-2 mb-2 text-gray-500">
+                                 <Calendar className="w-4 h-4" />
+                                 <span className="text-xs font-bold uppercase tracking-wider">Sent</span>
+                             </div>
+                             <p className="text-sm font-semibold text-gray-900">
+                                 {detailsMessage ? new Date(detailsMessage.created_at).toLocaleDateString() : '-'}
+                             </p>
+                             <p className="text-xs text-gray-400">
+                                 {detailsMessage ? new Date(detailsMessage.created_at).toLocaleTimeString() : '-'}
+                             </p>
+                         </div>
+                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                             <div className="flex items-center gap-2 mb-2 text-gray-500">
+                                 <Clock className="w-4 h-4" />
+                                 <span className="text-xs font-bold uppercase tracking-wider">Edited</span>
+                             </div>
+                             <p className="text-sm font-semibold text-gray-900">
+                                 {detailsMessage?.updated_at ? new Date(detailsMessage.updated_at).toLocaleDateString() : 'Never'}
+                             </p>
+                             {detailsMessage?.updated_at && (
+                                <p className="text-xs text-gray-400">
+                                    {new Date(detailsMessage.updated_at).toLocaleTimeString()}
+                                </p>
+                             )}
+                         </div>
                      </div>
-                     <p className="text-sm font-semibold text-gray-900">
-                         {detailsMessage ? new Date(detailsMessage.created_at).toLocaleDateString() : '-'}
-                     </p>
-                     <p className="text-xs text-gray-400">
-                         {detailsMessage ? new Date(detailsMessage.created_at).toLocaleTimeString() : '-'}
-                     </p>
-                 </div>
-                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                     <div className="flex items-center gap-2 mb-2 text-gray-500">
-                         <Clock className="w-4 h-4" />
-                         <span className="text-xs font-bold uppercase tracking-wider">Edited</span>
-                     </div>
-                     <p className="text-sm font-semibold text-gray-900">
-                         {detailsMessage?.updated_at ? new Date(detailsMessage.updated_at).toLocaleDateString() : 'Never'}
-                     </p>
-                     {detailsMessage?.updated_at && (
-                        <p className="text-xs text-gray-400">
-                            {new Date(detailsMessage.updated_at).toLocaleTimeString()}
-                        </p>
-                     )}
-                 </div>
-             </div>
 
-             <div>
-                 <div className="flex items-center justify-between mb-3">
-                     <div className="flex items-center gap-2 text-gray-500">
-                         <Eye className="w-4 h-4" />
-                         <span className="text-xs font-bold uppercase tracking-wider">Read Receipts</span>
-                     </div>
-                     <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                         {detailsMessage?.seen_by?.filter(entry => getSeenUserId(entry) !== user?.id).length || 0} Total
-                     </span>
-                 </div>
-                 
-                 <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm max-h-[200px] overflow-y-auto">
-                     {detailsMessage?.seen_by && detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).length > 0 ? (
-                         <div className="divide-y divide-gray-50">
-                             {detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).map((entry, idx) => {
-                                 const uid = getSeenUserId(entry);
-                                 const seenAt = getSeenTime(entry);
-                                 return (
-                                     <div key={idx} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
-                                         <div className="flex items-center gap-3">
-                                             <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                                                 {getProfileName(uid)[0].toUpperCase()}
+                     <div>
+                         <div className="flex items-center justify-between mb-3">
+                             <div className="flex items-center gap-2 text-gray-500">
+                                 <Eye className="w-4 h-4" />
+                                 <span className="text-xs font-bold uppercase tracking-wider">Read Receipts</span>
+                             </div>
+                             <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">
+                                 {detailsMessage?.seen_by?.filter(entry => getSeenUserId(entry) !== user?.id).length || 0} Total
+                             </span>
+                         </div>
+                         
+                         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm max-h-[200px] overflow-y-auto">
+                             {detailsMessage?.seen_by && detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).length > 0 ? (
+                                 <div className="divide-y divide-gray-50">
+                                     {detailsMessage.seen_by.filter(entry => getSeenUserId(entry) !== user?.id).map((entry, idx) => {
+                                         const uid = getSeenUserId(entry);
+                                         const seenAt = getSeenTime(entry);
+                                         return (
+                                             <div key={idx} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+                                                 <div className="flex items-center gap-3">
+                                                     <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                                                         {getProfileName(uid)[0].toUpperCase()}
+                                                     </div>
+                                                     <span className="text-sm font-medium text-gray-700">{getProfileName(uid)}</span>
+                                                 </div>
+                                                 <div className="flex flex-col items-end">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-0.5" />
+                                                    {seenAt && (
+                                                        <>
+                                                            <span className="text-[10px] text-gray-400">{new Date(seenAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                                            <span className="text-[9px] text-gray-300">{new Date(seenAt).toLocaleDateString()}</span>
+                                                        </>
+                                                    )}
+                                                 </div>
                                              </div>
-                                             <span className="text-sm font-medium text-gray-700">{getProfileName(uid)}</span>
-                                         </div>
-                                         <div className="flex flex-col items-end">
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-500 mb-0.5" />
-                                            {seenAt && (
-                                                <>
-                                                    <span className="text-[10px] text-gray-400">{new Date(seenAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                                    <span className="text-[9px] text-gray-300">{new Date(seenAt).toLocaleDateString()}</span>
-                                                </>
-                                            )}
-                                         </div>
-                                     </div>
-                                 );
-                             })}
+                                         );
+                                     })}
+                                 </div>
+                             ) : (
+                                 <div className="p-8 text-center text-gray-400">
+                                     <Eye className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                                     <p className="text-xs">Not seen by anyone yet.</p>
+                                 </div>
+                             )}
                          </div>
-                     ) : (
-                         <div className="p-8 text-center text-gray-400">
-                             <Eye className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                             <p className="text-xs">Not seen by anyone yet.</p>
-                         </div>
-                     )}
-                 </div>
-             </div>
-             
-             <div className="flex gap-3 pt-6 mt-4 border-t border-gray-100">
-                 {detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) && (
-                    <button 
-                        onClick={() => {
-                            if (detailsMessage) startEditing(detailsMessage);
-                            setDetailsMessage(null);
-                        }}
-                        className="flex-1 flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5 active:translate-y-0"
-                    >
-                        <Edit2 className="w-4 h-4 mr-2" /> Edit Message
-                    </button>
-                 )}
-                 <button 
-                    onClick={() => setDetailsMessage(null)}
-                    className={`flex items-center justify-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold rounded-xl transition-all ${
-                        detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) 
-                        ? 'flex-1' 
-                        : 'w-full'
-                    }`}
-                >
-                    Close
-                </button>
-             </div>
-         </div>
+                     </div>
+                     
+                     <div className="flex gap-3 pt-6 mt-4 border-t border-gray-100">
+                         {detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) && (
+                            <button 
+                                onClick={() => {
+                                    if (detailsMessage) {
+                                        setModalEditContent(detailsMessage.content);
+                                        setIsModalEditing(true);
+                                    }
+                                }}
+                                className="flex-1 flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5 active:translate-y-0"
+                            >
+                                <Edit2 className="w-4 h-4 mr-2" /> Edit Message
+                            </button>
+                         )}
+                         <button 
+                            onClick={() => setDetailsMessage(null)}
+                            className={`flex items-center justify-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold rounded-xl transition-all ${
+                                detailsMessage && detailsMessage.user_id === user?.id && (Date.now() - new Date(detailsMessage.created_at).getTime() < EDIT_WINDOW_MS) 
+                                ? 'flex-1' 
+                                : 'w-full'
+                            }`}
+                        >
+                            Close
+                        </button>
+                     </div>
+                 </motion.div>
+                ) : (
+                 <motion.div
+                     key="edit"
+                     initial={{ opacity: 0 }}
+                     animate={{ opacity: 1 }}
+                     exit={{ opacity: 0 }}
+                     transition={{ duration: 0.15 }}
+                     className="space-y-4"
+                 >
+                     <div className="flex items-center justify-between mb-2">
+                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Edit Content</span>
+                         <span className="text-xs text-indigo-500 font-medium">Auto-Saving Disabled</span>
+                     </div>
+                     <div className="relative">
+                        <textarea
+                            ref={modalTextareaRef}
+                            value={modalEditContent}
+                            onChange={(e) => setModalEditContent(e.target.value)}
+                            className="w-full h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none resize-none text-sm leading-relaxed"
+                            placeholder="Edit message..."
+                            autoFocus
+                        />
+                        {/* Emoji Trigger */}
+                        <div className="absolute bottom-3 right-3" ref={modalEmojiPickerRef}>
+                            <button 
+                                onClick={() => setShowModalEmojiPicker(!showModalEmojiPicker)}
+                                className="p-2 text-gray-400 hover:text-indigo-600 bg-white border border-gray-200 shadow-sm rounded-lg transition-colors"
+                            >
+                                <Smile size={16} />
+                            </button>
+                            <AnimatePresence>
+                            {showModalEmojiPicker && (
+                                <motion.div 
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    className="absolute bottom-full right-0 mb-2 z-50 shadow-xl rounded-2xl border border-gray-100"
+                                >
+                                    <EmojiPicker onEmojiClick={onModalEmojiClick} theme={Theme.LIGHT} width={280} height={350} previewConfig={{ showPreview: false }} />
+                                </motion.div>
+                            )}
+                            </AnimatePresence>
+                        </div>
+                     </div>
+                     
+                     <div className="flex justify-end gap-3 pt-2">
+                         <Button variant="secondary" onClick={() => setIsModalEditing(false)}>Cancel</Button>
+                         <Button onClick={handleSaveModalEdit}>Save Changes</Button>
+                     </div>
+                 </motion.div>
+                )}
+             </AnimatePresence>
       </Modal>
     </div>
   );

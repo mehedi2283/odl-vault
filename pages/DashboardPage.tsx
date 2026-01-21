@@ -976,7 +976,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user }) => {
                                             variants={itemVariants}
                                             key={cred.id} 
                                             onClick={() => canMutate && setEditingId(cred.id)}
-                                            className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[220px] min-w-0 ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
+                                            className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[240px] min-w-0 ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
                                         >
                                             <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
                                                 <div onClick={(e) => toggleSelection(cred.id, e)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedItems.has(cred.id) ? 'bg-indigo-600 border-indigo-600 text-white scale-110' : 'bg-white border-gray-200 text-transparent hover:border-indigo-400'}`}>

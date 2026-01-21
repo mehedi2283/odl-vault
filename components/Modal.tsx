@@ -39,14 +39,18 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
 
             {/* Modal Card */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="relative w-full max-w-lg transform rounded-2xl bg-white text-left shadow-2xl border border-gray-100 overflow-visible transition-all my-8"
+              layout
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ 
+                duration: 0.2,
+                layout: { type: "spring", stiffness: 300, damping: 25, mass: 0.5 } 
+              }}
+              className="relative w-full max-w-lg transform rounded-2xl bg-white text-left shadow-2xl border border-gray-100 overflow-visible my-8"
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50 rounded-t-2xl">
-                <h3 className="text-lg font-bold text-gray-900 tracking-tight">{title}</h3>
+                <motion.h3 layout="position" className="text-lg font-bold text-gray-900 tracking-tight">{title}</motion.h3>
                 <button
                   onClick={onClose}
                   className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-200/50"
