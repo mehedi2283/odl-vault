@@ -655,7 +655,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ user: currentUser }) => {
                                              )}
                                             </div>
                                          </td>
-                                     </tr>
+                                     </motion.tr>
                                  );
                              })
                          ) : (
