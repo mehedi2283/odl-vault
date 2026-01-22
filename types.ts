@@ -80,3 +80,10 @@ export interface FormDefinition {
 export interface ToastContextType {
   showToast: (message: string, type?: 'success' | 'error' | 'info' | 'mention', title?: string) => void;
 }
+
+export interface PasswordResetRequest {
+  id: string;
+  email: string;
+  status: 'pending' | 'resolved';
+  created_at: string;
+}

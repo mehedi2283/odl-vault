@@ -730,88 +730,16 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="bg-white border-t border-gray-100 p-5 z-20">
-        <form onSubmit={handleSend} className="relative flex items-end gap-2 max-w-5xl mx-auto">
-             
-             {/* Mention List Popup */}
-             <AnimatePresence>
-                 {showMentionList && filteredMentions.length > 0 && (
-                     <motion.div 
-                        ref={mentionListRef}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute bottom-full left-14 mb-2 w-72 max-w-[80vw] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50"
-                     >
-                         <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase">Mention User</div>
-                         {filteredMentions.map((profile, idx) => (
-                             <button
-                                key={profile.id}
-                                type="button"
-                                onClick={() => insertMention(profile)}
-                                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 text-sm transition-colors ${idx === mentionIndex ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-gray-50 text-gray-700'}`}
-                             >
-                                 <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                                     {profile.username[0].toUpperCase()}
-                                 </div>
-                                 <div className="flex flex-col min-w-0 overflow-hidden">
-                                     <span className="font-semibold leading-tight truncate block">{profile.username}</span>
-                                     {profile.full_name && <span className="text-xs text-gray-400 truncate block">{profile.full_name}</span>}
-                                 </div>
-                             </button>
-                         ))}
-                     </motion.div>
-                 )}
-             </AnimatePresence>
-
-             {/* Emoji Picker Trigger */}
-             <div className="relative flex-shrink-0" ref={emojiPickerRef}>
-                 <button 
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className={`h-[50px] w-[50px] flex items-center justify-center rounded-xl transition-colors border ${showEmojiPicker ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 border-transparent'}`}
-                 >
-                     <Smile size={20} />
-                 </button>
-                 {showEmojiPicker && (
-                     <div className="absolute bottom-16 left-0 z-50 shadow-2xl rounded-2xl border border-gray-100">
-                         <EmojiPicker onEmojiClick={insertEmoji} theme={Theme.LIGHT} width={300} height={400} previewConfig={{ showPreview: false }} />
-                     </div>
-                 )}
-             </div>
-
-             <div className="flex-1 relative">
-                <div
-                    ref={inputDivRef}
-                    contentEditable
-                    onInput={handleInput}
-                    onKeyDown={handleKeyDown}
-                    className="w-full pl-5 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:outline-none transition-all duration-200 min-h-[50px] max-h-[120px] overflow-y-auto break-all whitespace-pre-wrap leading-normal empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
-                    data-placeholder="Transmit secure message... (Use @ to mention)"
-                />
-             </div>
-             
-            <Button 
-              type="submit" 
-              disabled={isLoading || !plainText.trim()}
-              className="h-[50px] w-[50px] px-0 rounded-xl flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex-shrink-0"
-            >
-              {isLoading ? <RefreshCw className="h-5 w-5 animate-spin text-white" /> : <Send className="h-5 w-5 text-white ml-0.5" />}
-            </Button>
-        </form>
-      </div>
-
       {/* Message Details Modal */}
       <Modal isOpen={!!detailsMessage} onClose={() => setDetailsMessage(null)} title={isModalEditing ? "Edit Message" : "Message Details"}>
              <AnimatePresence mode="popLayout" initial={false}>
                 {!isModalEditing ? (
                  <motion.div 
                     key="details"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
                     className="space-y-6"
                  >
                      <div className="grid grid-cols-2 gap-4">
@@ -919,10 +847,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ user }) => {
                 ) : (
                  <motion.div
                      key="edit"
-                     initial={{ opacity: 0 }}
-                     animate={{ opacity: 1 }}
-                     exit={{ opacity: 0 }}
-                     transition={{ duration: 0.15 }}
+                     initial={{ opacity: 0, x: 20 }}
+                     animate={{ opacity: 1, x: 0 }}
+                     exit={{ opacity: 0, x: 20 }}
+                     transition={{ duration: 0.2, ease: "easeInOut" }}
                      className="space-y-4"
                  >
                      <div className="flex items-center justify-between mb-2">

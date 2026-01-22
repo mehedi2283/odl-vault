@@ -3,10 +3,12 @@ import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Lock, ArrowRight, AlertCircle, Loader2, 
-  Eye, EyeOff, UserPlus, Shield, X, Unlock, CheckCircle2, Box
+  Eye, EyeOff, UserPlus, Shield, X, Unlock, CheckCircle2, Box, HelpCircle
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import Button from '../components/Button';
+import Modal from '../components/Modal';
+import Input from '../components/Input';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -18,6 +20,11 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   
+  // Forgot Password
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
   // Suggestions
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentUsers, setRecentUsers] = useState<string[]>([]);
@@ -82,6 +89,58 @@ const LoginPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!forgotEmail) return;
+      setIsResetting(true);
+      setError('');
+      
+      const cleanEmail = forgotEmail.trim().toLowerCase();
+
+      try {
+          // Attempt to check existing (Best effort, might be blocked by RLS)
+          const { data: existing } = await supabase
+            .from('password_resets')
+            .select('id')
+            .eq('email', cleanEmail)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+          if (existing) {
+              setError("You already have a pending request. Please wait for the admin action.");
+              return;
+          }
+
+          // Insert Request
+          const { error } = await supabase
+            .from('password_resets')
+            .insert({ email: cleanEmail, status: 'pending' });
+          
+          if (error) {
+              // 23505 is Unique Violation (Postgres)
+              if (error.code === '23505') {
+                  setError("You already have a pending request. Please wait for the admin action.");
+                  return;
+              }
+              throw error;
+          }
+          
+          setSuccessMessage('Recovery request transmitted to Command. An administrator will review your credentials.');
+          setIsForgotModalOpen(false);
+          setForgotEmail('');
+      } catch (err: any) {
+          if (err.message?.includes('password_resets')) {
+               // Fallback if table doesn't exist yet
+               setError("System Error: Recovery protocol unavailable. Contact Admin.");
+          } else {
+               console.error(err);
+               setError("Failed to transmit request.");
+          }
+      } finally {
+          setIsResetting(false);
+      }
   };
 
   const saveRecentUser = (newEmail: string) => {
@@ -177,7 +236,18 @@ const LoginPage: React.FC = () => {
                         </div>
 
                         <div className="space-y-1.5">
-                            <label className="block text-sm font-medium text-gray-700 ml-1">Passcode</label>
+                            <div className="flex justify-between items-center ml-1">
+                                <label className="block text-sm font-medium text-gray-700">Passcode</label>
+                                {!isSignUp && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setIsForgotModalOpen(true); setError(''); }}
+                                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+                                    >
+                                        Forgot Password?
+                                    </button>
+                                )}
+                            </div>
                             <div className="relative">
                                 <input 
                                     type={showPassword ? "text" : "password"}
@@ -244,6 +314,37 @@ const LoginPage: React.FC = () => {
                 <span className="font-medium">256-bit Secure Connection</span>
             </div>
         </motion.div>
+
+        {/* Forgot Password Modal */}
+        <Modal isOpen={isForgotModalOpen} onClose={() => setIsForgotModalOpen(false)} title="Recover Access">
+            <div className="text-center p-4">
+                <div className="bg-indigo-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <HelpCircle className="w-8 h-8 text-indigo-600" />
+                </div>
+                <h3 className="text-gray-900 font-bold mb-2">Identify Yourself</h3>
+                <p className="text-sm text-gray-500 mb-6">Enter your operative ID (email). A recovery request will be sent to the Grand Administrator for manual review.</p>
+                <form onSubmit={handleForgotPassword} className="space-y-4 text-left">
+                    {/* Inline Error for Modal */}
+                    {error && (
+                        <div className="text-xs bg-rose-50 text-rose-700 p-2 rounded border border-rose-100 flex items-center gap-2">
+                            <AlertCircle size={14} /> {error}
+                        </div>
+                    )}
+                    <Input 
+                        label="Email Address"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="operative@agency.com"
+                        required
+                        autoFocus
+                    />
+                    <div className="flex justify-end gap-3 pt-2">
+                        <Button type="button" variant="secondary" onClick={() => setIsForgotModalOpen(false)}>Cancel</Button>
+                        <Button type="submit" isLoading={isResetting}>Submit Request</Button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
     </div>
   );
 };

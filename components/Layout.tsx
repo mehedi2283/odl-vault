@@ -7,6 +7,7 @@ import { RoutePath, User, ToastContextType } from '../types';
 import CommandPalette from './CommandPalette';
 import InactivityLock from './InactivityLock';
 import StealthMode from './StealthMode';
+import SessionTerminal from './SessionTerminal';
 import Toast from './Toast';
 import { supabase } from '../services/supabase';
 import { PresenceProvider } from './PresenceProvider';
@@ -40,6 +41,8 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, user }) => {
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'mention' = 'success', title?: string) => {
       const id = crypto.randomUUID();
       setToasts(prev => [...prev, { id, message, title, type, role: undefined }]);
+      // Log to terminal
+      window.dispatchEvent(new CustomEvent('odl-log', { detail: { message: `TOAST: ${message}`, type } }));
   }, []);
 
   // Internal helper for chat notifications (includes role)
@@ -55,7 +58,29 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, user }) => {
   // Keep ref updated for event listener access
   useEffect(() => {
     locationRef.current = location;
+    // Log navigation
+    window.dispatchEvent(new CustomEvent('odl-log', { detail: { message: `NAVIGATE: ${location.pathname}`, type: 'system' } }));
   }, [location]);
+
+  // --- Password Reset Listener (Grand Admin Only) ---
+  useEffect(() => {
+      if (user?.role !== 'grand_admin') return;
+
+      const channel = supabase.channel('password_resets_monitor')
+        .on(
+           'postgres_changes',
+           { event: 'INSERT', schema: 'public', table: 'password_resets' },
+           (payload) => {
+               if (payload.new.status === 'pending') {
+                   showToast(`Password Reset Requested: ${payload.new.email}`, 'info', 'System Alert');
+                   window.dispatchEvent(new CustomEvent('odl-log', { detail: { message: `AUTH_ALERT: Reset request for ${payload.new.email}`, type: 'warn' } }));
+               }
+           }
+        )
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+  }, [user, showToast]);
 
   // --- Global Notification & Audio Logic ---
   useEffect(() => {
@@ -257,6 +282,7 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, user }) => {
         )}
         
         <CommandPalette onLogout={onLogout} />
+        <SessionTerminal /> 
         {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={10} />}
         <StealthMode />
 
