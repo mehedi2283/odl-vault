@@ -5,7 +5,7 @@ import {
   Folder as FolderIcon, FileText, Lock, Plus, Search, Grid, 
   ChevronLeft, ChevronRight, Home, Settings, Check, ExternalLink, 
   User as UserIcon, MousePointerClick, Pencil, Trash2, LayoutTemplate, 
-  Shield, Network, FolderPlus
+  Shield, Network, FolderPlus, Save, X, RefreshCw, Copy
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { 
@@ -14,6 +14,8 @@ import {
 } from '../types';
 import Button from '../components/Button';
 import NetworkGraph from '../components/NetworkGraph';
+import Modal from '../components/Modal';
+import Input from '../components/Input';
 
 const PAGE_SIZE = 12;
 const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
@@ -57,14 +59,19 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Modals (Placeholders for logic)
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false); // Credential
-  const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
-  const [isCreateFormModalOpen, setIsCreateFormModalOpen] = useState(false);
+  // --- MODAL STATE ---
+  // Folder Modal
+  const [folderModal, setFolderModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<Folder> | null }>({ open: false, mode: 'create', data: null });
   
-  // Editing / Deleting
-  const [editingId, setEditingId] = useState<string | null>(null); 
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean, id: string | null, type: 'folder' | 'credential' | 'form' }>({ isOpen: false, id: null, type: 'folder' });
+  // Credential Modal
+  const [credModal, setCredModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<StoredCredential> | null }>({ open: false, mode: 'create', data: null });
+  
+  // Form Modal
+  const [formModal, setFormModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<FormDefinition> | null }>({ open: false, mode: 'create', data: null });
+
+  // Delete Confirmation
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string | null; type: 'folder' | 'credential' | 'form' }>({ open: false, id: null, type: 'folder' });
+  const [isMutating, setIsMutating] = useState(false);
 
   // Permissions
   const canMutate = useMemo(() => {
@@ -92,17 +99,17 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
         if (credsRes.error) throw credsRes.error;
         if (formsRes.error) throw formsRes.error;
 
-        // Map Folders (Snake Case -> Camel Case)
+        // Map Folders
         const mappedFolders: Folder[] = (foldersRes.data || []).map((f: any) => ({
             id: f.id,
             name: f.name,
             parentId: f.parent_id,
             createdAt: f.created_at,
-            type: f.type,
+            type: f.type, // Ensure DB has 'type' column
             createdBy: f.profiles
         }));
 
-        // Map Credentials (Snake Case -> Camel Case)
+        // Map Credentials
         const mappedCreds: StoredCredential[] = (credsRes.data || []).map((c: any) => ({
             id: c.id,
             clientName: c.client_name,
@@ -116,7 +123,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             createdBy: c.profiles
         }));
 
-        // Map Forms (Snake Case -> Camel Case)
+        // Map Forms
         const mappedForms: FormDefinition[] = (formsRes.data || []).map((f: any) => ({
             id: f.id,
             name: f.name,
@@ -149,7 +156,6 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       let filteredFolders: Folder[] = [];
       let filteredItems: (StoredCredential | FormDefinition)[] = [];
 
-      // Determine required type for current tab
       const isCredentialTab = activeMainTab === 'credentials';
 
       // 1. FILTER FOLDERS
@@ -157,7 +163,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
           const lower = searchQuery.toLowerCase();
           filteredFolders = folders.filter(f => {
               const nameMatch = f.name.toLowerCase().includes(lower);
-              // In search, we check type but ignore parentId to search deep
+              // Strict Type Matching
               const typeMatch = isCredentialTab 
                   ? (f.type === 'credential' || !f.type) 
                   : f.type === 'form';
@@ -166,6 +172,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       } else {
           filteredFolders = folders.filter(f => {
               const parentMatch = f.parentId === currentFolderId;
+              // Strict Type Matching
               const typeMatch = isCredentialTab 
                   ? (f.type === 'credential' || !f.type) 
                   : f.type === 'form';
@@ -212,7 +219,124 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       };
   }, [folders, credentials, forms, currentFolderId, activeMainTab, searchQuery, currentPage]);
 
-  // Actions
+  // --- CRUD HANDLERS ---
+
+  const handleSaveFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!folderModal.data?.name) return;
+    setIsMutating(true);
+    try {
+        if (folderModal.mode === 'create') {
+            const { error } = await supabase.from('folders').insert({
+                name: folderModal.data.name,
+                parent_id: currentFolderId,
+                type: activeMainTab === 'forms' ? 'form' : 'credential', // Assign type based on current tab
+                created_by: user?.id
+            });
+            if (error) throw error;
+            showToast("Folder created", "success");
+        } else {
+            const { error } = await supabase.from('folders')
+                .update({ name: folderModal.data.name })
+                .eq('id', folderModal.data.id);
+            if (error) throw error;
+            showToast("Folder updated", "success");
+        }
+        setFolderModal({ open: false, mode: 'create', data: null });
+        fetchData();
+    } catch (err: any) {
+        showToast(err.message, "error");
+    } finally {
+        setIsMutating(false);
+    }
+  };
+
+  const handleSaveCredential = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!credModal.data?.clientName || !credModal.data?.username) return;
+    setIsMutating(true);
+    try {
+        const payload = {
+            client_name: credModal.data.clientName,
+            service_name: credModal.data.serviceName || 'Service',
+            crm_link: credModal.data.crmLink,
+            username: credModal.data.username,
+            password: credModal.data.password,
+            folder_id: currentFolderId,
+            last_updated: new Date().toISOString()
+        };
+
+        if (credModal.mode === 'create') {
+            const { error } = await supabase.from('credentials').insert({
+                ...payload,
+                created_by: user?.id
+            });
+            if (error) throw error;
+            showToast("Credential secure", "success");
+        } else {
+            const { error } = await supabase.from('credentials').update(payload).eq('id', credModal.data.id);
+            if (error) throw error;
+            showToast("Credential updated", "success");
+        }
+        setCredModal({ open: false, mode: 'create', data: null });
+        fetchData();
+    } catch (err: any) {
+        showToast(err.message, "error");
+    } finally {
+        setIsMutating(false);
+    }
+  };
+
+  const handleSaveForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formModal.data?.name) return;
+    setIsMutating(true);
+    try {
+        if (formModal.mode === 'create') {
+            const { error } = await supabase.from('forms').insert({
+                name: formModal.data.name,
+                folder_id: currentFolderId,
+                status: formModal.data.status || 'draft',
+                webhook_key: crypto.randomUUID(), // Auto-generate key
+                created_by: user?.id
+            });
+            if (error) throw error;
+            showToast("Form initialized", "success");
+        } else {
+            const { error } = await supabase.from('forms')
+                .update({ name: formModal.data.name, status: formModal.data.status })
+                .eq('id', formModal.data.id);
+            if (error) throw error;
+            showToast("Form updated", "success");
+        }
+        setFormModal({ open: false, mode: 'create', data: null });
+        fetchData();
+    } catch (err: any) {
+        showToast(err.message, "error");
+    } finally {
+        setIsMutating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+      if (!deleteModal.id) return;
+      setIsMutating(true);
+      try {
+          const table = deleteModal.type === 'folder' ? 'folders' : deleteModal.type === 'credential' ? 'credentials' : 'forms';
+          const { error } = await supabase.from(table).delete().eq('id', deleteModal.id);
+          if (error) throw error;
+          showToast(`${deleteModal.type} deleted`, "success");
+          setDeleteModal({ open: false, id: null, type: 'folder' });
+          fetchData();
+      } catch (err: any) {
+          showToast(err.message, "error");
+      } finally {
+          setIsMutating(false);
+      }
+  };
+
+  // --- ACTIONS ---
+
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
       showToast("Copied to clipboard", "success");
@@ -247,20 +371,6 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
               <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30"><ChevronRight /></button>
           </div>
       );
-  };
-
-  const copyToClipboard = (text: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      handleCopy(text);
-  };
-  
-  const handleEditFolder = (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      showToast("Edit folder feature pending", "info");
-  };
-
-  const setCurrentFormId = (id: string) => {
-      showToast(`Form ${id} selected`, "info");
   };
 
   return (
@@ -298,8 +408,8 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                     </div>
                     {canMutate && (
                         <div className="flex gap-2">
-                             <Button onClick={() => setIsCreateFolderModalOpen(true)} variant="secondary" className="hidden sm:flex"><FolderPlus size={16} className="mr-2" /> Folder</Button>
-                             <Button onClick={() => activeMainTab === 'credentials' ? setIsAddModalOpen(true) : setIsCreateFormModalOpen(true)}><Plus size={16} className="mr-2" /> New {activeMainTab === 'credentials' ? 'Credential' : 'Form'}</Button>
+                             <Button onClick={() => setFolderModal({ open: true, mode: 'create', data: { name: '' } })} variant="secondary" className="hidden sm:flex"><FolderPlus size={16} className="mr-2" /> Folder</Button>
+                             <Button onClick={() => activeMainTab === 'credentials' ? setCredModal({ open: true, mode: 'create', data: { clientName: '' } }) : setFormModal({ open: true, mode: 'create', data: { name: '' } })}><Plus size={16} className="mr-2" /> New {activeMainTab === 'credentials' ? 'Credential' : 'Form'}</Button>
                         </div>
                     )}
                 </div>
@@ -341,7 +451,16 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                 forms={forms} 
                 currentFolderId={currentFolderId} 
                 onFolderClick={setCurrentFolderId}
-                onItemClick={(id, type) => { showToast(`Item ${id} selected in graph`, "info") }}
+                onItemClick={(id, type) => {
+                    if (!canMutate) return;
+                    if (type === 'credential') {
+                        const item = credentials.find(c => c.id === id);
+                        if (item) setCredModal({ open: true, mode: 'edit', data: item });
+                    } else {
+                        const item = forms.find(f => f.id === id);
+                        if (item) setFormModal({ open: true, mode: 'edit', data: item });
+                    }
+                }}
             />
         ) : (
             <AnimatePresence mode="wait">
@@ -375,7 +494,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                     
                                     <div className="flex gap-2 z-10">
                                         {canMutate && (
-                                            <div onClick={(e) => handleEditFolder(folder.id, e)} className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 flex items-center justify-center transition-colors text-gray-400 opacity-0 group-hover:opacity-100" title="Folder Settings">
+                                            <div onClick={(e) => { e.stopPropagation(); setFolderModal({ open: true, mode: 'edit', data: folder }); }} className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 flex items-center justify-center transition-colors text-gray-400 opacity-0 group-hover:opacity-100" title="Edit Folder">
                                                 <Settings size={14} />
                                             </div>
                                         )}
@@ -406,7 +525,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                 <motion.div 
                                     variants={itemVariants}
                                     key={cred.id} 
-                                    onClick={() => canMutate && setEditingId(cred.id)}
+                                    onClick={() => canMutate && setCredModal({ open: true, mode: 'edit', data: cred })}
                                     className={`group relative bg-white rounded-2xl border transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer flex flex-col h-[240px] min-w-0 ${selectedItems.has(cred.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
                                 >
                                     <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
@@ -440,7 +559,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                         
                                         <div className="space-y-2 flex-1 min-w-0">
                                             <div 
-                                                onClick={(e) => copyToClipboard(cred.username, e)}
+                                                onClick={(e) => { e.stopPropagation(); handleCopy(cred.username); }}
                                                 className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100 min-w-0"
                                                 title="Click to copy"
                                             >
@@ -449,7 +568,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                                 <MousePointerClick size={12} className="text-indigo-400 opacity-0 group-hover/row:opacity-100 transition-opacity translate-x-2 group-hover/row:translate-x-0 flex-shrink-0" />
                                             </div>
                                             <div 
-                                                onClick={(e) => copyToClipboard(cred.password, e)}
+                                                onClick={(e) => { e.stopPropagation(); handleCopy(cred.password); }}
                                                 className="flex items-center text-sm text-gray-600 group/row hover:bg-gray-50 p-2 -ml-2 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-gray-100 min-w-0"
                                                 title="Click to copy"
                                             >
@@ -463,8 +582,8 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                             <span className="truncate">Updated: {new Date(cred.lastUpdated).toLocaleDateString()}</span>
                                             {canMutate && (
                                                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                                    <button onClick={() => setEditingId(cred.id)} className="hover:text-indigo-600 transition-colors p-1"><Pencil size={14} /></button>
-                                                    <button onClick={() => setDeleteConfirmation({ isOpen: true, id: cred.id, type: 'credential' })} className="hover:text-rose-600 transition-colors p-1"><Trash2 size={14} /></button>
+                                                    <button onClick={() => setCredModal({ open: true, mode: 'edit', data: cred })} className="hover:text-indigo-600 transition-colors p-1"><Pencil size={14} /></button>
+                                                    <button onClick={() => setDeleteModal({ open: true, id: cred.id, type: 'credential' })} className="hover:text-rose-600 transition-colors p-1"><Trash2 size={14} /></button>
                                                 </div>
                                             )}
                                         </div>
@@ -477,7 +596,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                 <motion.div 
                                     variants={itemVariants}
                                     key={form.id} 
-                                    onClick={() => setCurrentFormId(form.id)} 
+                                    onClick={() => canMutate && setFormModal({ open: true, mode: 'edit', data: form })}
                                     className={`group relative bg-white p-6 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[200px] min-w-0 ${selectedItems.has(form.id) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'}`}
                                 >
                                         <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
@@ -504,7 +623,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                     <div className="pt-4 border-t border-gray-100 flex justify-between items-center min-w-0">
                                         <p className="text-xs text-gray-400 font-medium truncate">Created {new Date(form.createdAt).toLocaleDateString()}</p>
                                         {canMutate && (
-                                            <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ isOpen: true, id: form.id, type: 'form' }); }} className="text-gray-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0"><Trash2 size={16} /></button>
+                                            <button onClick={(e) => { e.stopPropagation(); setDeleteModal({ open: true, id: form.id, type: 'form' }); }} className="text-gray-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 flex-shrink-0"><Trash2 size={16} /></button>
                                         )}
                                     </div>
                                 </motion.div>
@@ -518,7 +637,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                             <div className="bg-white p-4 rounded-full shadow-sm mb-4"><Shield className="h-10 w-10 text-gray-300" /></div>
                             <h3 className="text-base font-bold text-gray-900">Vault Empty</h3>
                             <p className="text-sm text-gray-500 mt-1 mb-6 max-w-sm mx-auto">No records found in this sector. Initiate a new record or create a directory.</p>
-                            {canMutate && <Button onClick={() => activeMainTab === 'credentials' ? setIsAddModalOpen(true) : setIsCreateFormModalOpen(true)} variant="secondary" className="text-xs">Create First Record</Button>}
+                            {canMutate && <Button onClick={() => activeMainTab === 'credentials' ? setCredModal({ open: true, mode: 'create', data: { clientName: '' } }) : setFormModal({ open: true, mode: 'create', data: { name: '' } })} variant="secondary" className="text-xs">Create First Record</Button>}
                         </div>
                     )}
                     
@@ -528,6 +647,115 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                 </motion.div>
             </AnimatePresence>
         )}
+
+        {/* --- MODALS --- */}
+        
+        {/* FOLDER MODAL */}
+        <Modal isOpen={folderModal.open} onClose={() => setFolderModal({ ...folderModal, open: false })} title={folderModal.mode === 'create' ? 'Create Folder' : 'Edit Folder'}>
+            <form onSubmit={handleSaveFolder} className="space-y-4">
+                <Input label="Folder Name" value={folderModal.data?.name || ''} onChange={(e) => setFolderModal({ ...folderModal, data: { ...folderModal.data, name: e.target.value } })} placeholder="e.g. Finance, Client A" autoFocus required />
+                <div className="flex justify-end gap-3 pt-2">
+                    <Button type="button" variant="secondary" onClick={() => setFolderModal({ ...folderModal, open: false })}>Cancel</Button>
+                    <Button type="submit" isLoading={isMutating}>{folderModal.mode === 'create' ? 'Create Folder' : 'Save Changes'}</Button>
+                </div>
+            </form>
+        </Modal>
+
+        {/* CREDENTIAL MODAL */}
+        <Modal isOpen={credModal.open} onClose={() => setCredModal({ ...credModal, open: false })} title={credModal.mode === 'create' ? 'New Credential' : 'Edit Credential'}>
+            <form onSubmit={handleSaveCredential} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <Input label="Client / App Name" value={credModal.data?.clientName || ''} onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, clientName: e.target.value } })} placeholder="e.g. OpenAI" autoFocus required />
+                    <div className="space-y-1.5">
+                        <label className="block text-sm font-medium text-gray-700 ml-1">Service</label>
+                        <select 
+                            value={credModal.data?.serviceName || ''} 
+                            onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, serviceName: e.target.value } })}
+                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all sm:text-sm"
+                        >
+                            <option value="">Select...</option>
+                            <option value="Google">Google</option>
+                            <option value="AWS">AWS</option>
+                            <option value="Azure">Azure</option>
+                            <option value="GitHub">GitHub</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+                <Input label="Login URL" value={credModal.data?.crmLink || ''} onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, crmLink: e.target.value } })} placeholder="https://..." />
+                <Input label="Username / Email" value={credModal.data?.username || ''} onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, username: e.target.value } })} placeholder="user@domain.com" required />
+                <div className="space-y-1.5">
+                    <label className="block text-sm font-medium text-gray-700 ml-1">Password</label>
+                    <input 
+                        type="text" 
+                        value={credModal.data?.password || ''} 
+                        onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, password: e.target.value } })} 
+                        className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all sm:text-sm font-mono"
+                        placeholder="••••••••" 
+                    />
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                    <Button type="button" variant="secondary" onClick={() => setCredModal({ ...credModal, open: false })}>Cancel</Button>
+                    <Button type="submit" isLoading={isMutating}>{credModal.mode === 'create' ? 'Secure Credential' : 'Update Credential'}</Button>
+                </div>
+            </form>
+        </Modal>
+
+        {/* FORM MODAL */}
+        <Modal isOpen={formModal.open} onClose={() => setFormModal({ ...formModal, open: false })} title={formModal.mode === 'create' ? 'Initialize Form' : 'Edit Form Config'}>
+            <form onSubmit={handleSaveForm} className="space-y-4">
+                <Input label="Form Name" value={formModal.data?.name || ''} onChange={(e) => setFormModal({ ...formModal, data: { ...formModal.data, name: e.target.value } })} placeholder="e.g. Contact Us" autoFocus required />
+                
+                {formModal.mode === 'edit' && (
+                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Webhook Endpoint</label>
+                        <div className="flex items-center gap-2">
+                             <code className="flex-1 text-xs bg-white p-2 rounded border border-gray-200 truncate font-mono text-gray-600">
+                                {formModal.data?.webhookUrl}
+                             </code>
+                             <button type="button" onClick={() => handleCopy(formModal.data?.webhookUrl || '')} className="p-2 bg-white border border-gray-200 rounded hover:text-indigo-600 hover:border-indigo-200"><Copy size={14} /></button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-1.5">
+                    <label className="block text-sm font-medium text-gray-700 ml-1">Status</label>
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="status" checked={formModal.data?.status === 'active'} onChange={() => setFormModal({ ...formModal, data: { ...formModal.data, status: 'active' } })} className="text-indigo-600 focus:ring-indigo-500" />
+                            <span className="text-sm text-gray-700">Active</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="status" checked={formModal.data?.status !== 'active'} onChange={() => setFormModal({ ...formModal, data: { ...formModal.data, status: 'draft' } })} className="text-indigo-600 focus:ring-indigo-500" />
+                            <span className="text-sm text-gray-700">Draft</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                    <Button type="button" variant="secondary" onClick={() => setFormModal({ ...formModal, open: false })}>Cancel</Button>
+                    <Button type="submit" isLoading={isMutating}>{formModal.mode === 'create' ? 'Create Form' : 'Save Configuration'}</Button>
+                </div>
+            </form>
+        </Modal>
+
+        {/* DELETE CONFIRMATION */}
+        <Modal isOpen={deleteModal.open} onClose={() => setDeleteModal({ ...deleteModal, open: false })} title="Confirm Deletion">
+            <div className="text-center p-4">
+                <div className="bg-rose-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                    <Trash2 className="h-8 w-8 text-rose-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Delete {deleteModal.type}?</h3>
+                <p className="text-sm text-gray-500 mt-2 mb-6">
+                    This action is permanent and cannot be undone. All contained data will be lost.
+                </p>
+                <div className="flex justify-center gap-3">
+                    <Button variant="secondary" onClick={() => setDeleteModal({ ...deleteModal, open: false })}>Cancel</Button>
+                    <Button variant="danger" onClick={handleDelete} isLoading={isMutating}>Delete Permanently</Button>
+                </div>
+            </div>
+        </Modal>
+
     </div>
   );
 };
