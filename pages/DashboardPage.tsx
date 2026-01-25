@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Folder as FolderIcon, FileText, Lock, Plus, Search, Grid, 
   ChevronLeft, ChevronRight, Home, Settings, Check, ExternalLink, 
   User as UserIcon, MousePointerClick, Pencil, Trash2, LayoutTemplate, 
-  Shield, Network, FolderPlus, Save, X, RefreshCw, Copy
+  Shield, Network, FolderPlus, Save, X, RefreshCw, Copy, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { 
@@ -19,6 +19,15 @@ import Input from '../components/Input';
 
 const PAGE_SIZE = 12;
 const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
+
+const COMMON_SERVICES = [
+    "Google", "AWS", "Azure", "GitHub", "GitLab", 
+    "DigitalOcean", "Heroku", "Vercel", "Netlify", 
+    "Slack", "Discord", "Linear", "Notion", "Figma", 
+    "Adobe", "Microsoft", "Apple", "Facebook", "Twitter", 
+    "LinkedIn", "Stripe", "PayPal", "Supabase", "Firebase",
+    "OpenAI", "Anthropic"
+];
 
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
@@ -66,6 +75,10 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   // Credential Modal
   const [credModal, setCredModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<StoredCredential> | null }>({ open: false, mode: 'create', data: null });
   
+  // Service Combobox State
+  const [isServiceDropdownOpen, setIsServiceDropdownOpen] = useState(false);
+  const serviceInputRef = useRef<HTMLDivElement>(null);
+  
   // Form Modal
   const [formModal, setFormModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<FormDefinition> | null }>({ open: false, mode: 'create', data: null });
 
@@ -78,6 +91,17 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       if (!user) return false;
       return ['grand_admin', 'master_admin', 'admin'].includes(user.role);
   }, [user]);
+
+  // Handle Click Outside for Service Dropdown
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (serviceInputRef.current && !serviceInputRef.current.contains(event.target as Node)) {
+              setIsServiceDropdownOpen(false);
+          }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Fetch Data
   const fetchData = async () => {
@@ -666,20 +690,48 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             <form onSubmit={handleSaveCredential} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <Input label="Client / App Name" value={credModal.data?.clientName || ''} onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, clientName: e.target.value } })} placeholder="e.g. OpenAI" autoFocus required />
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5" ref={serviceInputRef}>
                         <label className="block text-sm font-medium text-gray-700 ml-1">Service</label>
-                        <select 
-                            value={credModal.data?.serviceName || ''} 
-                            onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, serviceName: e.target.value } })}
-                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all sm:text-sm"
-                        >
-                            <option value="">Select...</option>
-                            <option value="Google">Google</option>
-                            <option value="AWS">AWS</option>
-                            <option value="Azure">Azure</option>
-                            <option value="GitHub">GitHub</option>
-                            <option value="Other">Other</option>
-                        </select>
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                value={credModal.data?.serviceName || ''} 
+                                onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, serviceName: e.target.value } })}
+                                onFocus={() => setIsServiceDropdownOpen(true)}
+                                className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all sm:text-sm"
+                                placeholder="Select or type..." 
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <ChevronDown size={16} />
+                            </div>
+                            <AnimatePresence>
+                                {isServiceDropdownOpen && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10 }} 
+                                        animate={{ opacity: 1, y: 0 }} 
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute z-50 mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-48 overflow-y-auto"
+                                    >
+                                        {COMMON_SERVICES.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).length > 0 ? (
+                                            COMMON_SERVICES.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).map(service => (
+                                                <div 
+                                                    key={service}
+                                                    onClick={() => {
+                                                        setCredModal({ ...credModal, data: { ...credModal.data, serviceName: service } });
+                                                        setIsServiceDropdownOpen(false);
+                                                    }}
+                                                    className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 transition-colors"
+                                                >
+                                                    {service}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="px-4 py-2 text-xs text-gray-400 italic">Type to create custom service...</div>
+                                        )}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
                 </div>
                 <Input label="Login URL" value={credModal.data?.crmLink || ''} onChange={(e) => setCredModal({ ...credModal, data: { ...credModal.data, crmLink: e.target.value } })} placeholder="https://..." />
