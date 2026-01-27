@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Folder as FolderIcon, FileText, Lock, Plus, Search, Grid, 
   ChevronLeft, ChevronRight, Home, Settings, Check, ExternalLink, 
   User as UserIcon, MousePointerClick, Pencil, Trash2, LayoutTemplate, 
-  Shield, Network, FolderPlus, Save, X, RefreshCw, Copy, ChevronDown
+  Shield, Network, FolderPlus, Save, X, RefreshCw, Copy, ChevronDown, Move,
+  CheckSquare, Square, CornerDownRight
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { 
@@ -83,7 +85,11 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   const [formModal, setFormModal] = useState<{ open: boolean; mode: 'create' | 'edit'; data: Partial<FormDefinition> | null }>({ open: false, mode: 'create', data: null });
 
   // Delete Confirmation
-  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string | null; type: 'folder' | 'credential' | 'form' }>({ open: false, id: null, type: 'folder' });
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string | null; type: 'folder' | 'credential' | 'form' | 'bulk' }>({ open: false, id: null, type: 'folder' });
+  
+  // Move Modal
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+
   const [isMutating, setIsMutating] = useState(false);
 
   // Permissions
@@ -104,8 +110,8 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   }, []);
 
   // Fetch Data
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
         const [foldersRes, credsRes, formsRes] = await Promise.all([
             supabase.from('folders')
@@ -129,7 +135,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             name: f.name,
             parentId: f.parent_id,
             createdAt: f.created_at,
-            type: f.type, // Ensure DB has 'type' column
+            type: f.type, 
             createdBy: f.profiles
         }));
 
@@ -165,15 +171,26 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
         setForms(mappedForms);
     } catch (e: any) {
         console.error("Fetch Error:", e);
-        showToast("Failed to load vault data", "error");
+        if (!isBackground) showToast("Failed to load vault data", "error");
     } finally {
-        setLoading(false);
+        if (!isBackground) setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+
+    // Real-time Subscriptions
+    const channel = supabase.channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'folders' }, () => fetchData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credentials' }, () => fetchData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forms' }, () => fetchData(true))
+      .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
   // Filter Logic
   const { displayFolders, displayItems, totalPages } = useMemo(() => {
@@ -243,6 +260,47 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       };
   }, [folders, credentials, forms, currentFolderId, activeMainTab, searchQuery, currentPage]);
 
+  // --- ACTIONS ---
+
+  const handleSelectAll = () => {
+      const allIds = [...displayFolders, ...displayItems].map(i => i.id);
+      const allSelected = allIds.length > 0 && allIds.every(id => selectedItems.has(id));
+      
+      const newSelected = new Set(selectedItems);
+      if (allSelected) {
+          allIds.forEach(id => newSelected.delete(id));
+      } else {
+          allIds.forEach(id => newSelected.add(id));
+      }
+      setSelectedItems(newSelected);
+  };
+
+  const isAllSelected = useMemo(() => {
+      if (displayFolders.length === 0 && displayItems.length === 0) return false;
+      const allIds = [...displayFolders, ...displayItems].map(i => i.id);
+      return allIds.length > 0 && allIds.every(id => selectedItems.has(id));
+  }, [displayFolders, displayItems, selectedItems]);
+
+  const handleCopy = (text: string) => {
+      navigator.clipboard.writeText(text);
+      showToast("Copied to clipboard", "success");
+  };
+
+  const toggleSelection = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const next = new Set(selectedItems);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setSelectedItems(next);
+  };
+
+  const enterFolder = (id: string | null) => {
+      setCurrentFolderId(id);
+      setSearchQuery(''); 
+      setCurrentPage(1);
+      setSelectedItems(new Set()); // Clear selection on navigation
+  };
+
   // --- CRUD HANDLERS ---
 
   const handleSaveFolder = async (e: React.FormEvent) => {
@@ -286,13 +344,13 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             crm_link: credModal.data.crmLink,
             username: credModal.data.username,
             password: credModal.data.password,
-            folder_id: currentFolderId,
             last_updated: new Date().toISOString()
         };
 
         if (credModal.mode === 'create') {
             const { error } = await supabase.from('credentials').insert({
                 ...payload,
+                folder_id: currentFolderId,
                 created_by: user?.id
             });
             if (error) throw error;
@@ -319,9 +377,9 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
         if (formModal.mode === 'create') {
             const { error } = await supabase.from('forms').insert({
                 name: formModal.data.name,
-                folder_id: currentFolderId,
+                folder_id: currentFolderId, 
                 status: formModal.data.status || 'draft',
-                webhook_key: crypto.randomUUID(), // Auto-generate key
+                webhook_key: crypto.randomUUID(),
                 created_by: user?.id
             });
             if (error) throw error;
@@ -343,13 +401,28 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   };
 
   const handleDelete = async () => {
-      if (!deleteModal.id) return;
       setIsMutating(true);
       try {
-          const table = deleteModal.type === 'folder' ? 'folders' : deleteModal.type === 'credential' ? 'credentials' : 'forms';
-          const { error } = await supabase.from(table).delete().eq('id', deleteModal.id);
-          if (error) throw error;
-          showToast(`${deleteModal.type} deleted`, "success");
+          if (deleteModal.id) {
+             const table = deleteModal.type === 'folder' ? 'folders' : deleteModal.type === 'credential' ? 'credentials' : 'forms';
+             const { error } = await supabase.from(table).delete().eq('id', deleteModal.id);
+             if (error) throw error;
+             showToast(`${deleteModal.type} deleted`, "success");
+          } else if (selectedItems.size > 0) {
+             const items = Array.from(selectedItems);
+             const foldersToDelete = items.filter(id => folders.find(f => f.id === id));
+             const credsToDelete = items.filter(id => credentials.find(c => c.id === id));
+             const formsToDelete = items.filter(id => forms.find(f => f.id === id));
+             
+             await Promise.all([
+                 foldersToDelete.length && supabase.from('folders').delete().in('id', foldersToDelete),
+                 credsToDelete.length && supabase.from('credentials').delete().in('id', credsToDelete),
+                 formsToDelete.length && supabase.from('forms').delete().in('id', formsToDelete)
+             ]);
+             showToast(`Deleted ${items.length} items`, "success");
+             setSelectedItems(new Set());
+          }
+          
           setDeleteModal({ open: false, id: null, type: 'folder' });
           fetchData();
       } catch (err: any) {
@@ -359,20 +432,65 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       }
   };
 
-  // --- ACTIONS ---
+  const handleMoveItems = async (targetFolderId: string | null) => {
+      setIsMutating(true);
+      try {
+          const items = Array.from(selectedItems);
+          const foldersToMove = items.filter(id => folders.find(f => f.id === id));
+          const credsToMove = items.filter(id => credentials.find(c => c.id === id));
+          const formsToMove = items.filter(id => forms.find(f => f.id === id));
 
-  const handleCopy = (text: string) => {
-      navigator.clipboard.writeText(text);
-      showToast("Copied to clipboard", "success");
+          if (targetFolderId && foldersToMove.includes(targetFolderId)) {
+             showToast("Cannot move a folder into itself", "error");
+             setIsMutating(false);
+             return;
+          }
+
+          if (foldersToMove.length > 0) await supabase.from('folders').update({ parent_id: targetFolderId }).in('id', foldersToMove);
+          if (credsToMove.length > 0) await supabase.from('credentials').update({ folder_id: targetFolderId }).in('id', credsToMove);
+          if (formsToMove.length > 0) await supabase.from('forms').update({ folder_id: targetFolderId }).in('id', formsToMove);
+
+          showToast(`Moved ${items.length} items`, "success");
+          setMoveModalOpen(false);
+          setSelectedItems(new Set());
+          fetchData();
+      } catch (e) {
+          showToast("Move failed", "error");
+      } finally {
+          setIsMutating(false);
+      }
   };
 
-  const toggleSelection = (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const next = new Set(selectedItems);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      setSelectedItems(next);
-  };
+  // --- TREE VIEW RENDERING ---
+  const renderFolderTree = useCallback((parentId: string | null, depth = 0) => {
+      const neededType = activeMainTab === 'credentials' ? 'credential' : 'form';
+      
+      const childFolders = folders
+        .filter(f => f.parentId === parentId)
+        .filter(f => f.type === neededType || !f.type) // Strict type matching
+        .filter(f => !selectedItems.has(f.id)); // Don't show selected folders as drop targets
+
+      if (childFolders.length === 0) return null;
+
+      return (
+          <div className="flex flex-col gap-1">
+              {childFolders.map(folder => (
+                  <React.Fragment key={folder.id}>
+                      <button
+                          onClick={() => handleMoveItems(folder.id)}
+                          className={`flex items-center gap-2 p-2 rounded-lg text-sm text-left transition-all hover:bg-white hover:shadow-sm ${currentFolderId === folder.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}
+                          style={{ paddingLeft: `${depth * 1.5 + 0.75}rem` }}
+                      >
+                          {depth > 0 && <CornerDownRight size={14} className="text-gray-300" />}
+                          <FolderIcon size={16} className={currentFolderId === folder.id ? 'text-indigo-500' : 'text-gray-400'} />
+                          <span className="truncate">{folder.name}</span>
+                      </button>
+                      {renderFolderTree(folder.id, depth + 1)}
+                  </React.Fragment>
+              ))}
+          </div>
+      );
+  }, [folders, activeMainTab, selectedItems, currentFolderId]);
 
   // Breadcrumbs
   const breadcrumbs = useMemo(() => {
@@ -408,14 +526,14 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                     </h1>
                     {/* Breadcrumbs */}
                     <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
-                        <button onClick={() => setCurrentFolderId(null)} className={`hover:text-indigo-600 flex items-center gap-1 ${!currentFolderId ? 'font-bold text-indigo-600' : ''}`}>
+                        <button onClick={() => enterFolder(null)} className={`hover:text-indigo-600 flex items-center gap-1 ${!currentFolderId ? 'font-bold text-indigo-600' : ''}`}>
                             <Home size={14} /> Root
                         </button>
                         {breadcrumbs.map((folder, idx) => (
                             <React.Fragment key={folder.id}>
                                 <ChevronRight size={14} className="text-gray-300" />
                                 <button 
-                                    onClick={() => setCurrentFolderId(folder.id)}
+                                    onClick={() => enterFolder(folder.id)}
                                     className={`hover:text-indigo-600 ${idx === breadcrumbs.length - 1 ? 'font-bold text-indigo-600' : ''}`}
                                 >
                                     {folder.name}
@@ -442,13 +560,13 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-gray-200 shadow-sm">
                  <div className="flex gap-2 w-full sm:w-auto">
                      <button 
-                        onClick={() => { setActiveMainTab('credentials'); setCurrentFolderId(null); setSearchQuery(''); setCurrentPage(1); }} 
+                        onClick={() => { setActiveMainTab('credentials'); enterFolder(null); }} 
                         className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeMainTab === 'credentials' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}
                      >
                         Credentials
                      </button>
                      <button 
-                        onClick={() => { setActiveMainTab('forms'); setCurrentFolderId(null); setSearchQuery(''); setCurrentPage(1); }} 
+                        onClick={() => { setActiveMainTab('forms'); enterFolder(null); }} 
                         className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeMainTab === 'forms' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}
                      >
                         Forms
@@ -474,7 +592,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                 credentials={credentials} 
                 forms={forms} 
                 currentFolderId={currentFolderId} 
-                onFolderClick={setCurrentFolderId}
+                onFolderClick={enterFolder}
                 onItemClick={(id, type) => {
                     if (!canMutate) return;
                     if (type === 'credential') {
@@ -508,7 +626,7 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                             <motion.div 
                                 variants={itemVariants}
                                 key={folder.id} 
-                                onClick={() => setCurrentFolderId(folder.id)} 
+                                onClick={() => enterFolder(folder.id)} 
                                 className={`group relative bg-white p-5 rounded-2xl border transition-all cursor-pointer hover:shadow-xl hover:-translate-y-1 flex flex-col justify-between h-[150px] min-w-0 ${selectedItems.has(folder.id) ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50/10' : 'border-gray-200 hover:border-indigo-200'}`}
                             >
                                 <div className="flex items-start justify-between">
@@ -672,6 +790,44 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             </AnimatePresence>
         )}
 
+        {/* --- SELECTION NAVBAR --- */}
+        {selectedItems.size > 0 && createPortal(
+            <div className="navbar-fixed-container">
+                <div className="selection-navbar animate-fade-in-up">
+                    <div className="flex items-center gap-3">
+                        <span className="selection-count-badge">{selectedItems.size}</span>
+                        <span className="text-sm font-bold text-zinc-200">Selected</span>
+                    </div>
+                    
+                    <div className="navbar-divider"></div>
+                    
+                    <button 
+                        onClick={handleSelectAll}
+                        className="navbar-btn-move"
+                    >
+                        {isAllSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                        Select All
+                    </button>
+
+                    <div className="navbar-divider"></div>
+                    
+                    <button onClick={() => setMoveModalOpen(true)} className="navbar-btn-move">
+                        <Move size={14} /> Move
+                    </button>
+                    <button onClick={() => setDeleteModal({ open: true, id: null, type: 'bulk' })} className="navbar-btn-delete">
+                        <Trash2 size={14} /> Delete
+                    </button>
+                    
+                    <div className="navbar-divider"></div>
+                    
+                    <button onClick={() => setSelectedItems(new Set())} className="navbar-btn-icon">
+                        <X size={20} />
+                    </button>
+                </div>
+            </div>,
+            document.body
+        )}
+
         {/* --- MODALS --- */}
         
         {/* FOLDER MODAL */}
@@ -791,13 +947,33 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
             </form>
         </Modal>
 
+        {/* MOVE MODAL */}
+        <Modal isOpen={moveModalOpen} onClose={() => setMoveModalOpen(false)} title="Move Items">
+            <div className="space-y-4">
+                <p className="text-sm text-gray-600">Select destination folder for {selectedItems.size} items:</p>
+                <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-xl bg-gray-50 p-2 space-y-1">
+                    <button 
+                        onClick={() => handleMoveItems(null)}
+                        className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm text-left hover:bg-white hover:shadow-sm transition-all ${currentFolderId === null ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-gray-700'}`}
+                    >
+                        <Home size={16} className="text-gray-400" />
+                        Root Directory
+                    </button>
+                    {renderFolderTree(null)}
+                </div>
+                <div className="flex justify-end pt-2">
+                    <Button variant="secondary" onClick={() => setMoveModalOpen(false)}>Cancel</Button>
+                </div>
+            </div>
+        </Modal>
+
         {/* DELETE CONFIRMATION */}
         <Modal isOpen={deleteModal.open} onClose={() => setDeleteModal({ ...deleteModal, open: false })} title="Confirm Deletion">
             <div className="text-center p-4">
                 <div className="bg-rose-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
                     <Trash2 className="h-8 w-8 text-rose-600" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Delete {deleteModal.type}?</h3>
+                <h3 className="text-lg font-bold text-gray-900">Delete {deleteModal.type === 'bulk' ? 'Selected Items' : deleteModal.type}?</h3>
                 <p className="text-sm text-gray-500 mt-2 mb-6">
                     This action is permanent and cannot be undone. All contained data will be lost.
                 </p>
