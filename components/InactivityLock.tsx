@@ -15,7 +15,7 @@ const STORAGE_KEYS = {
   LAST_ACTIVE: 'odl_last_active'
 };
 
-const InactivityLock: React.FC<InactivityLockProps> = ({ userEmail, userName, onLogout, timeoutMinutes = 600 }) => {
+const InactivityLock: React.FC<InactivityLockProps> = ({ userEmail, userName, onLogout, timeoutMinutes = 5 }) => {
   // Initialize state based on persistent storage
   const [isLocked, setIsLocked] = useState(() => {
     const storedLock = localStorage.getItem(STORAGE_KEYS.LOCKED);

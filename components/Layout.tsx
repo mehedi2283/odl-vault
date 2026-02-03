@@ -283,7 +283,7 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, user }) => {
         
         <CommandPalette onLogout={onLogout} />
         <SessionTerminal /> 
-        {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={10} />}
+        {user && <InactivityLock userEmail={user.email || user.username} userName={displayName} onLogout={onLogout} timeoutMinutes={1440} />}
         <StealthMode />
 
         {/* Mobile Sidebar Overlay */}
