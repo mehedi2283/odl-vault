@@ -93,7 +93,9 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
   const uniqueServices = useMemo(() => {
       const services = new Set<string>();
       credentials.forEach(c => {
-          if (c.serviceName) services.add(c.serviceName);
+          if (c.serviceName && c.serviceName.trim() !== '') {
+              services.add(c.serviceName.trim());
+          }
       });
       return Array.from(services).sort();
   }, [credentials]);
@@ -515,6 +517,9 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       );
   };
 
+  const currentServiceName = credModal.data?.serviceName || '';
+  const filteredServices = uniqueServices.filter(s => s.toLowerCase().includes(currentServiceName.toLowerCase()));
+
   return (
     <div className="space-y-6 pb-20">
         {/* Header */}
@@ -868,8 +873,8 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                         exit={{ opacity: 0, y: -10 }}
                                         className="absolute z-50 mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-48 overflow-y-auto"
                                     >
-                                        {uniqueServices.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).length > 0 ? (
-                                            uniqueServices.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).map(service => (
+                                        {filteredServices.length > 0 ? (
+                                            filteredServices.map(service => (
                                                 <div 
                                                     key={service}
                                                     onClick={() => {
@@ -882,7 +887,22 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                                 </div>
                                             ))
                                         ) : (
-                                            <div className="px-4 py-2 text-xs text-gray-400 italic">Type to create custom service...</div>
+                                            null
+                                        )}
+                                        {currentServiceName && !uniqueServices.some(s => s.toLowerCase() === currentServiceName.toLowerCase()) && (
+                                            <div 
+                                                onClick={() => {
+                                                   // Already typed, just close dropdown
+                                                   setIsServiceDropdownOpen(false);
+                                                }}
+                                                className="px-4 py-2 hover:bg-indigo-50 cursor-pointer text-sm text-indigo-600 font-medium transition-colors border-t border-gray-50 flex items-center"
+                                            >
+                                                <Plus size={14} className="mr-2" />
+                                                Create "{currentServiceName}"
+                                            </div>
+                                        )}
+                                        {(!currentServiceName && filteredServices.length === 0) && (
+                                             <div className="px-4 py-2 text-xs text-gray-400 italic">Type to create custom service...</div>
                                         )}
                                     </motion.div>
                                 )}
