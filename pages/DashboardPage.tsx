@@ -22,15 +22,6 @@ import Input from '../components/Input';
 const PAGE_SIZE = 12;
 const BASE_WEBHOOK_URL = "https://qqxdfqerllirceqiwyex.supabase.co/functions/v1/clever-worker";
 
-const COMMON_SERVICES = [
-    "Google", "AWS", "Azure", "GitHub", "GitLab", 
-    "DigitalOcean", "Heroku", "Vercel", "Netlify", 
-    "Slack", "Discord", "Linear", "Notion", "Figma", 
-    "Adobe", "Microsoft", "Apple", "Facebook", "Twitter", 
-    "LinkedIn", "Stripe", "PayPal", "Supabase", "Firebase",
-    "OpenAI", "Anthropic"
-];
-
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0 },
@@ -97,6 +88,15 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
       if (!user) return false;
       return ['grand_admin', 'master_admin', 'admin'].includes(user.role);
   }, [user]);
+
+  // Dynamic Service List from existing credentials
+  const uniqueServices = useMemo(() => {
+      const services = new Set<string>();
+      credentials.forEach(c => {
+          if (c.serviceName) services.add(c.serviceName);
+      });
+      return Array.from(services).sort();
+  }, [credentials]);
 
   // Handle Click Outside for Service Dropdown
   useEffect(() => {
@@ -868,8 +868,8 @@ const DashboardPage: React.FC<{ user: User | null }> = ({ user }) => {
                                         exit={{ opacity: 0, y: -10 }}
                                         className="absolute z-50 mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-48 overflow-y-auto"
                                     >
-                                        {COMMON_SERVICES.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).length > 0 ? (
-                                            COMMON_SERVICES.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).map(service => (
+                                        {uniqueServices.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).length > 0 ? (
+                                            uniqueServices.filter(s => s.toLowerCase().includes((credModal.data?.serviceName || '').toLowerCase())).map(service => (
                                                 <div 
                                                     key={service}
                                                     onClick={() => {
